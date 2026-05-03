@@ -4,6 +4,7 @@ import { api } from "../lib/api";
 import { useCart } from "../lib/cart";
 import { useAuth } from "../lib/auth";
 import { Star, MapPin, Leaf, ShoppingBasket, ArrowLeft, User } from "lucide-react";
+import { StartChatButton } from "./Chat";
 
 export default function ProductDetail() {
     const { id } = useParams();

@@ -2,7 +2,9 @@ import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
-import { Star, MapPin, ArrowLeft, Calendar, Clock, User } from "lucide-react";
+import { Star, MapPin, ArrowLeft, Calendar, Clock, User, ShieldCheck } from "lucide-react";
+import PaymentProviderSelector from "../components/PaymentProviderSelector";
+import { StartChatButton } from "./Chat";
 
 export default function ServiceDetail() {
     const { id } = useParams();
@@ -12,6 +14,7 @@ export default function ServiceDetail() {
     const [reviews, setReviews] = useState([]);
     const [scheduledAt, setScheduledAt] = useState("");
     const [notes, setNotes] = useState("");
+    const [provider, setProvider] = useState("stripe");
     const [loading, setLoading] = useState(true);
     const [booking, setBooking] = useState(false);
     const [err, setErr] = useState("");
@@ -35,6 +38,7 @@ export default function ServiceDetail() {
                 scheduled_at: new Date(scheduledAt).toISOString(),
                 notes,
                 origin_url: window.location.origin,
+                payment_provider: provider,
             });
             window.location.href = data.checkout_url;
         } catch (e) {
@@ -103,11 +107,15 @@ export default function ServiceDetail() {
                                 <span className="text-sm font-medium">Notas para el experto</span>
                                 <textarea rows={3} className="input-rurapp mt-1" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Cuéntale al experto el motivo de la consulta" data-testid="booking-notes" />
                             </label>
+                            <PaymentProviderSelector value={provider} onChange={setProvider} dataTestPrefix="srv-pp" />
                             <button type="submit" disabled={booking} className="btn-primary w-full inline-flex items-center justify-center gap-2" data-testid="book-now">
                                 <Calendar className="h-5 w-5" /> {booking ? "Procesando…" : "Agendar y pagar"}
                             </button>
                             <p className="text-xs text-rurapp-inkMuted text-center">Pago seguro. Tu cita se confirma al completar el pago.</p>
                         </form>
+                        <div className="mt-3">
+                            <StartChatButton otherUserId={service.expert_id} label={`Mensaje a ${service.expert_name?.split(" ")[0] || "experto"}`} className="btn-outline w-full" />
+                        </div>
                     </div>
                 </div>
             </div>

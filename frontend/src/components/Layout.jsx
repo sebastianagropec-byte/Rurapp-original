@@ -3,7 +3,7 @@ import { useAuth } from "../lib/auth";
 import { useCart } from "../lib/cart";
 import {
     Home, Sprout, Stethoscope, BookOpen, ShoppingBasket,
-    User, MessageCircle, LogOut, Menu, X
+    User, MessageCircle, LogOut, Menu, X, MapPin
 } from "lucide-react";
 import { useState } from "react";
 
@@ -29,8 +29,10 @@ export function TopBar() {
                 <nav className="hidden md:flex items-center gap-2">
                     <Link to="/marketplace" className="px-3 py-2 text-rurapp-ink hover:text-rurapp-forest font-medium" data-testid="nav-marketplace">Productos</Link>
                     <Link to="/servicios" className="px-3 py-2 text-rurapp-ink hover:text-rurapp-forest font-medium" data-testid="nav-services">Servicios</Link>
+                    <Link to="/mapa" className="px-3 py-2 text-rurapp-ink hover:text-rurapp-forest font-medium" data-testid="nav-map">Mapa</Link>
                     <Link to="/contenido" className="px-3 py-2 text-rurapp-ink hover:text-rurapp-forest font-medium" data-testid="nav-articles">Contenido</Link>
-                    <Link to="/asistente" className="px-3 py-2 text-rurapp-ink hover:text-rurapp-forest font-medium" data-testid="nav-ai">Asistente Rura</Link>
+                    <Link to="/asistente" className="px-3 py-2 text-rurapp-ink hover:text-rurapp-forest font-medium" data-testid="nav-ai">Asistente</Link>
+                    {user && <Link to="/chat" className="px-3 py-2 text-rurapp-ink hover:text-rurapp-forest font-medium" data-testid="nav-chat">Chat</Link>}
                 </nav>
 
                 <div className="flex items-center gap-2">
@@ -66,8 +68,10 @@ export function TopBar() {
                     <div className="container-rurapp py-2 flex flex-col">
                         <Link to="/marketplace" onClick={() => setMenuOpen(false)} className="py-3 font-medium" data-testid="mnav-marketplace">Productos</Link>
                         <Link to="/servicios" onClick={() => setMenuOpen(false)} className="py-3 font-medium" data-testid="mnav-services">Servicios</Link>
+                        <Link to="/mapa" onClick={() => setMenuOpen(false)} className="py-3 font-medium" data-testid="mnav-map">Mapa</Link>
                         <Link to="/contenido" onClick={() => setMenuOpen(false)} className="py-3 font-medium" data-testid="mnav-articles">Contenido</Link>
                         <Link to="/asistente" onClick={() => setMenuOpen(false)} className="py-3 font-medium" data-testid="mnav-ai">Asistente Rura</Link>
+                        {user && <Link to="/chat" onClick={() => setMenuOpen(false)} className="py-3 font-medium" data-testid="mnav-chat">Chat</Link>}
                         {user ? (
                             <>
                                 <Link to="/dashboard" onClick={() => setMenuOpen(false)} className="py-3 font-medium" data-testid="mnav-dashboard">Mi cuenta</Link>

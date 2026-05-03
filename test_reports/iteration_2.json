@@ -1,0 +1,67 @@
+{
+  "summary": "Phase 2 backend testing for Rurapp. Ran 93 tests across iteration_1 (52, regression) and a new test_phase2.py (41 cases) covering geolocation lat/lng, Wompi/MercadoPago MOCKED checkouts (orders/bookings/memberships), payment-status polling, COL webhooks, chat REST + WebSocket, veterinarian verification (with Claude AI pre-analysis), and admin moderation endpoints. 92 passed, 1 failed. The single failure is a real backend bug: POST /api/auth/register accepts lat/lng in the payload (UserCreate model exposes them) but the user_doc constructed in server.py does not persist them, so the response and DB record have lat=lng=null. ALL iteration_1 critical issues are now resolved (Stripe status retrieval, AI chat budget) - the route-level try/except wrappers added by the main agent now degrade gracefully instead of 500. Wompi/MP/SendGrid all behave correctly in MOCKED mode. WebSocket /api/ws/chat accepts valid JWTs and rejects invalid ones.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "POST /api/auth/register",
+        "issue": "lat/lng fields are accepted by Pydantic UserCreate model but NOT persisted to MongoDB. The user_doc dict in server.py register() (lines ~116-134) only writes phone/location/bio - it omits lat and lng. Repro: POST /api/auth/register with {email, password, full_name, role:'cliente', lat:4.711, lng:-74.072} returns user with lat=null, lng=null. Fix: add 'lat': payload.lat, 'lng': payload.lng to user_doc.",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "POST /api/webhook/wompi & /api/webhook/mercadopago",
+        "issue": "Both webhooks always return {received: true} even on parse error; no signature verification (acceptable while keys are MOCKED but must be added before live)."
+      },
+      {
+        "endpoint": "POST /api/admin/verifications/{id}/review",
+        "issue": "Does not validate that ver_id corresponds to an existing user before updating user.verified - if verification has stale user_id the user update silently no-ops (low risk)."
+      },
+      {
+        "endpoint": "POST /api/verifications",
+        "issue": "VerificationSubmit.document_url is REQUIRED (str) but UI/UX implies it can be uploaded later. Consider Optional[str] = None to allow text-only submissions then upload doc separately, or document the requirement clearly."
+      },
+      {
+        "endpoint": "POST /api/messages",
+        "issue": "No rate limiting; an authenticated user can spam the recipient with messages and trigger one SendGrid email per offline message (when keys configured)."
+      }
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_phase2.py",
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Persist lat/lng in POST /api/auth/register: add 'lat': payload.lat, 'lng': payload.lng to user_doc in server.py register().",
+    "Make VerificationSubmit.document_url Optional or document its requirement - non-vet 422 would have masked the 403 RBAC check.",
+    "Consider Wompi/MercadoPago webhook signature verification before going live (currently MOCKED, no signature check).",
+    "Iteration_1 ‘critical’ issues (Stripe status 500 + AI budget) are RESOLVED by the route-level try/except wrappers - no further action needed."
+  ],
+  "critical_code_review_comments": [
+    "server.py is now ~980 lines and routes_extra.py ~340 lines. Time to split server.py into routers/ (auth.py, products.py, services.py, orders.py, bookings.py, memberships.py, payments.py, ai.py).",
+    "routes_extra.register_chat_routes/verification_routes/admin_routes all close over `db` but mutate the shared module-level `extra_router`. Calling register_all twice would duplicate routes - works for current usage but fragile.",
+    "ws_manager: ensure connection cleanup on abnormal disconnect (manager.disconnect should be called on every Exception path - currently is, but no test for stale connections).",
+    "/api/conversations/{id}/messages does not paginate - returns up to 1000 messages. Add since/until cursor for production.",
+    "/api/messages send_message: When recipient offline, sends one email per message (no batching) - costly with SendGrid in production.",
+    "Verification AI analysis stores full Claude reply verbatim in DB. If user submits sensitive info this becomes a privacy concern; consider hashing/redacting.",
+    "_is_admin: relies on user.is_admin flag OR ADMIN_EMAILS env list. If both empty, no one can access /api/admin/* - acceptable but no boot-time warning.",
+    "co_provider_checkout in routes_extra is imported by server.py - circular-ish dependency. Consider moving to a shared payments module.",
+    "PaymentTransaction.metadata stores 'mocked' as string ('true'/'false') only for orders, not bookings/memberships - inconsistent.",
+    "In MOCKED mode, payment_status immediately returns 'paid' on first poll without any user action. This is convenient for dev but production behaviour should differ - add an explicit MOCK guard or random delay."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase2.py (new - Phase 2 test suite, 41 cases)"
+  ],
+  "success_rate": {
+    "backend": "98.9% (92/93 tests pass; only failure is the lat/lng register bug)",
+    "frontend": "not tested (backend-only request)"
+  },
+  "test_credentials": "campesino@rurapp.co / rurapp123 (productor); vet@rurapp.co / rurapp123 (veterinario); cliente@rurapp.co / rurapp123 (cliente); admin@rurapp.co / rurapp123 (is_admin). All in /app/memory/test_credentials.md.",
+  "seed_data_creation": "Tests create TEST_ prefixed products/services/articles, test_*@test.co users, and one verification record for the vet user (which the admin_review test then approves -> sets user.verified=true). Re-run is idempotent; cleanup is not required for next run.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run: cd /app/backend && REACT_APP_BACKEND_URL=<url> pytest tests/ -v. test_phase2.py adds 41 new tests; backend_test.py from iteration_1 still works. The vet user gets approved by test_admin_review_verification - this is non-destructive since the seed user starts as approved anyway. WebSocket tests use the `websockets` python lib (already installed). Wompi/MP MOCKED flow approves on first poll - if main agent adds delay/random states, update test_payment_status_*_mocked accordingly. SendGrid mocked = logs only.",
+  "rca_of_the_issue": "Bug: POST /api/auth/register drops lat/lng. RCA: server.py register() builds user_doc as a hand-written dict (not from payload.model_dump()) and only includes a curated subset of fields (email, password_hash, full_name, role, phone, location, bio, ...). Lat/lng were added to the UserCreate Pydantic model but the dict construction in register() was not updated. Reproduce: curl -X POST $URL/api/auth/register -d '{\"email\":\"x@x.co\",\"password\":\"123\",\"full_name\":\"X\",\"role\":\"cliente\",\"lat\":4.7,\"lng\":-74.0}' -> response.user.lat is null. Mitigation: edit server.py register() to add 'lat': payload.lat and 'lng': payload.lng to user_doc, OR refactor to user_doc = {**payload.model_dump(exclude={'password'}), 'password_hash': hash_password(payload.password), 'id': gen_id(), ...}."
+}

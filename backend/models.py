@@ -25,6 +25,8 @@ class UserCreate(BaseModel):
     phone: Optional[str] = None
     location: Optional[str] = None  # ciudad/región
     bio: Optional[str] = None
+    lat: Optional[float] = None
+    lng: Optional[float] = None
 
 
 class UserLogin(BaseModel):
@@ -45,10 +47,14 @@ class UserPublic(BaseModel):
     sustainable_practices: Optional[List[str]] = []
     specialty: Optional[str] = None  # for vet/expert
     verified: bool = False
+    verification_status: Optional[str] = "none"  # none, pending, approved, rejected
     membership_active: bool = False
     membership_expires_at: Optional[str] = None
     rating_avg: float = 0.0
     rating_count: int = 0
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+    is_admin: bool = False
     created_at: str = Field(default_factory=now_iso)
 
 
@@ -60,6 +66,8 @@ class UserUpdate(BaseModel):
     avatar_url: Optional[str] = None
     sustainable_practices: Optional[List[str]] = None
     specialty: Optional[str] = None
+    lat: Optional[float] = None
+    lng: Optional[float] = None
 
 
 class TokenResponse(BaseModel):
@@ -165,6 +173,7 @@ class OrderCreateRequest(BaseModel):
     delivery_address: str
     notes: Optional[str] = None
     origin_url: str  # window.location.origin from frontend
+    payment_provider: Optional[Literal["stripe", "wompi", "mercadopago"]] = "stripe"
 
 
 class OrderItem(BaseModel):
@@ -196,6 +205,7 @@ class BookingCreateRequest(BaseModel):
     scheduled_at: str  # ISO datetime
     notes: Optional[str] = None
     origin_url: str
+    payment_provider: Optional[Literal["stripe", "wompi", "mercadopago"]] = "stripe"
 
 
 class Booking(BaseModel):
@@ -282,6 +292,7 @@ class CheckoutStatusResponse(BaseModel):
 class MembershipCheckoutRequest(BaseModel):
     plan_id: str  # "basico" or "pro"
     origin_url: str
+    payment_provider: Optional[Literal["stripe", "wompi", "mercadopago"]] = "stripe"
 
 
 class PaymentTransaction(BaseModel):
@@ -294,8 +305,77 @@ class PaymentTransaction(BaseModel):
     reference_id: Optional[str] = None  # order_id / booking_id / plan_id
     amount: float
     currency: str = "usd"
+    provider: str = "stripe"  # stripe, wompi, mercadopago
     status: str = "initiated"  # initiated, pending, paid, expired, failed
     payment_status: str = "unpaid"
     metadata: dict = {}
     created_at: str = Field(default_factory=now_iso)
     updated_at: str = Field(default_factory=now_iso)
+
+
+# ===== CHAT =====
+class ConversationCreate(BaseModel):
+    other_user_id: str
+
+
+class Conversation(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=gen_id)
+    participants: List[str]  # [user_id_a, user_id_b]
+    participant_names: dict = {}  # {user_id: full_name}
+    last_message: Optional[str] = None
+    last_message_at: Optional[str] = None
+    unread_for: dict = {}  # {user_id: count}
+    created_at: str = Field(default_factory=now_iso)
+
+
+class MessageCreate(BaseModel):
+    conversation_id: str
+    content: str
+
+
+class ChatMessage(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=gen_id)
+    conversation_id: str
+    sender_id: str
+    sender_name: str
+    content: str
+    read_by: List[str] = []
+    created_at: str = Field(default_factory=now_iso)
+
+
+# ===== VERIFICATION =====
+class VerificationSubmit(BaseModel):
+    document_type: str  # "cedula_profesional", "tarjeta_profesional", "diploma"
+    document_url: str  # URL or data: URI
+    professional_name: str
+    professional_id: str  # Numero de matricula/cedula profesional
+    institution: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class Verification(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=gen_id)
+    user_id: str
+    user_email: str
+    user_name: str
+    document_type: str
+    document_url: str
+    professional_name: str
+    professional_id: str
+    institution: Optional[str] = None
+    notes: Optional[str] = None
+    ai_analysis: Optional[str] = None
+    ai_recommendation: Optional[str] = None  # approve, review, reject
+    status: str = "pending"  # pending, ai_approved, approved, rejected
+    admin_notes: Optional[str] = None
+    reviewed_by: Optional[str] = None
+    reviewed_at: Optional[str] = None
+    created_at: str = Field(default_factory=now_iso)
+
+
+class AdminReviewRequest(BaseModel):
+    decision: Literal["approve", "reject"]
+    admin_notes: Optional[str] = None

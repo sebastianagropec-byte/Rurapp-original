@@ -3,6 +3,8 @@ import { useParams, Link } from "react-router-dom";
 import { api } from "../lib/api";
 import { ProductCard, ServiceCard } from "../components/Cards";
 import { User, MapPin, Star, Leaf, ShieldCheck } from "lucide-react";
+import { MiniMap } from "../components/RurappMap";
+import { StartChatButton } from "./Chat";
 
 export default function PublicProfile() {
     const { id } = useParams();
@@ -44,8 +46,18 @@ export default function PublicProfile() {
                             {user.sustainable_practices.map((s, i) => <span key={i} className="chip"><Leaf className="h-3 w-3 mr-1" />{s}</span>)}
                         </div>
                     )}
+                    <div className="mt-4">
+                        <StartChatButton otherUserId={user.id} />
+                    </div>
                 </div>
             </div>
+
+            {(user.lat && user.lng) && (
+                <div className="mt-6">
+                    <h2 className="font-heading text-lg font-semibold mb-2 flex items-center gap-1"><MapPin className="h-4 w-4" /> Ubicación</h2>
+                    <MiniMap lat={user.lat} lng={user.lng} height="240px" label={user.full_name} />
+                </div>
+            )}
 
             {products.length > 0 && (
                 <section className="mt-10">

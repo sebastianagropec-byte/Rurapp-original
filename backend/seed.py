@@ -21,7 +21,7 @@ async def seed():
 
     # Wipe demo data (keep collections clean for predictable demo)
     await db.users.delete_many({"email": {"$in": [
-        "campesino@rurapp.co", "vet@rurapp.co", "cliente@rurapp.co"
+        "campesino@rurapp.co", "vet@rurapp.co", "cliente@rurapp.co", "admin@rurapp.co"
     ]}})
 
     expires = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
@@ -35,14 +35,16 @@ async def seed():
         "role": "productor",
         "phone": "3001234567",
         "location": "Boyacá",
+        "lat": 5.5353, "lng": -73.3678,  # Tunja, Boyacá
         "bio": "Tercera generación cultivando papa criolla y hortalizas en Tunja. Sin agroquímicos.",
         "avatar_url": None,
         "sustainable_practices": ["Sin agroquímicos", "Riego por goteo", "Compostaje propio"],
         "specialty": None,
-        "verified": True,
+        "verified": True, "verification_status": "approved",
         "membership_active": True,
         "membership_expires_at": expires,
         "rating_avg": 4.8, "rating_count": 12,
+        "is_admin": False,
         "created_at": now_iso(),
     }
     vet_id = gen_id()
@@ -54,14 +56,16 @@ async def seed():
         "role": "veterinario",
         "phone": "3019876543",
         "location": "Cundinamarca",
+        "lat": 4.711, "lng": -74.0721,  # Bogotá area
         "bio": "Médico veterinario zootecnista con 15 años de experiencia en bovinos y aves de corral.",
         "avatar_url": None,
         "sustainable_practices": [],
         "specialty": "Bovinos y aves",
-        "verified": True,
+        "verified": True, "verification_status": "approved",
         "membership_active": True,
         "membership_expires_at": expires,
         "rating_avg": 4.9, "rating_count": 22,
+        "is_admin": False,
         "created_at": now_iso(),
     }
     cliente_id = gen_id()
@@ -73,17 +77,38 @@ async def seed():
         "role": "cliente",
         "phone": "3105557788",
         "location": "Bogotá",
+        "lat": 4.6097, "lng": -74.0817,  # Bogotá
         "bio": "Mamá interesada en alimentación consciente y apoyo al campo.",
         "avatar_url": None,
         "sustainable_practices": [],
         "specialty": None,
-        "verified": False,
+        "verified": False, "verification_status": "none",
         "membership_active": True,
         "membership_expires_at": None,
         "rating_avg": 0.0, "rating_count": 0,
+        "is_admin": False,
         "created_at": now_iso(),
     }
-    await db.users.insert_many([producer, vet, cliente])
+    admin_id = gen_id()
+    admin = {
+        "id": admin_id,
+        "email": "admin@rurapp.co",
+        "password_hash": hash_password("rurapp123"),
+        "full_name": "Admin Rurapp",
+        "role": "cliente",
+        "phone": None, "location": "Colombia",
+        "lat": None, "lng": None,
+        "bio": "Administrador de la plataforma",
+        "avatar_url": None,
+        "sustainable_practices": [], "specialty": None,
+        "verified": True, "verification_status": "approved",
+        "membership_active": True,
+        "membership_expires_at": None,
+        "rating_avg": 0.0, "rating_count": 0,
+        "is_admin": True,
+        "created_at": now_iso(),
+    }
+    await db.users.insert_many([producer, vet, cliente, admin])
 
     # Products (delete & insert demo products)
     await db.products.delete_many({"producer_id": {"$in": [producer_id]}})

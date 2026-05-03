@@ -37,6 +37,13 @@ from emergentintegrations.payments.stripe.checkout import (
 # LLM
 from emergentintegrations.llm.chat import LlmChat, UserMessage
 
+# Email + COL payments + extra routes
+from email_service import (
+    send_order_confirmation, send_booking_confirmation, send_membership_receipt,
+)
+from payments_co import wompi, mercadopago
+from routes_extra import register_all as register_extra_routes, co_provider_checkout
+
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -408,37 +415,48 @@ async def create_order(
     )
     await db.orders.insert_one(order.model_dump())
 
-    # Create Stripe checkout session
-    stripe = _build_stripe(request)
+    provider = payload.payment_provider or "stripe"
     success_url = f"{payload.origin_url}/payment/success?session_id={{CHECKOUT_SESSION_ID}}&order_id={order.id}"
     cancel_url = f"{payload.origin_url}/cart"
-    session = await stripe.create_checkout_session(CheckoutSessionRequest(
-        amount=float(total),
-        currency="usd",
-        success_url=success_url,
-        cancel_url=cancel_url,
-        metadata={"type": "order", "order_id": order.id, "user_id": user_id},
-    ))
 
-    # Save transaction
+    if provider == "stripe":
+        stripe = _build_stripe(request)
+        session = await stripe.create_checkout_session(CheckoutSessionRequest(
+            amount=float(total), currency="usd",
+            success_url=success_url, cancel_url=cancel_url,
+            metadata={"type": "order", "order_id": order.id, "user_id": user_id},
+        ))
+        session_id, checkout_url, currency = session.session_id, session.url, "usd"
+        amount_charged = float(total)
+    else:
+        # Wompi / MercadoPago use COP
+        co = co_provider_checkout(
+            provider=provider,
+            reference=order.id,
+            amount_cop=float(total),
+            customer_email=user["email"],
+            description=f"Pedido Rurapp #{order.id[:8]}",
+            success_url=success_url,
+            cancel_url=cancel_url,
+        )
+        session_id = co["session_id"]
+        checkout_url = co["checkout_url"]
+        currency = "cop"
+        amount_charged = float(total)
+
     tx = PaymentTransaction(
-        session_id=session.session_id,
-        user_id=user_id,
-        user_email=user["email"],
-        type="order",
-        reference_id=order.id,
-        amount=total,
-        currency="usd",
-        status="initiated",
-        payment_status="unpaid",
-        metadata={"order_id": order.id},
+        session_id=session_id,
+        user_id=user_id, user_email=user["email"],
+        type="order", reference_id=order.id,
+        amount=amount_charged, currency=currency,
+        provider=provider, status="initiated", payment_status="unpaid",
+        metadata={"order_id": order.id, "mocked": str(co.get("mocked", False)) if provider != "stripe" else "false"},
     )
     await db.payment_transactions.insert_one(tx.model_dump())
     await db.orders.update_one(
-        {"id": order.id}, {"$set": {"payment_session_id": session.session_id}}
+        {"id": order.id}, {"$set": {"payment_session_id": session_id}}
     )
-
-    return {"order_id": order.id, "checkout_url": session.url, "session_id": session.session_id}
+    return {"order_id": order.id, "checkout_url": checkout_url, "session_id": session_id, "provider": provider}
 
 
 @api_router.get("/orders/mine", response_model=List[Order])
@@ -486,33 +504,40 @@ async def create_booking(
     )
     await db.bookings.insert_one(booking.model_dump())
 
-    stripe = _build_stripe(request)
+    provider = payload.payment_provider or "stripe"
     success_url = f"{payload.origin_url}/payment/success?session_id={{CHECKOUT_SESSION_ID}}&booking_id={booking.id}"
-    cancel_url = f"{payload.origin_url}/services/{service['id']}"
-    session = await stripe.create_checkout_session(CheckoutSessionRequest(
-        amount=float(service["price"]),
-        currency="usd",
-        success_url=success_url,
-        cancel_url=cancel_url,
-        metadata={"type": "booking", "booking_id": booking.id, "user_id": user_id},
-    ))
+    cancel_url = f"{payload.origin_url}/servicio/{service['id']}"
+
+    if provider == "stripe":
+        stripe = _build_stripe(request)
+        session = await stripe.create_checkout_session(CheckoutSessionRequest(
+            amount=float(service["price"]), currency="usd",
+            success_url=success_url, cancel_url=cancel_url,
+            metadata={"type": "booking", "booking_id": booking.id, "user_id": user_id},
+        ))
+        session_id, checkout_url, currency = session.session_id, session.url, "usd"
+    else:
+        co = co_provider_checkout(
+            provider=provider, reference=booking.id,
+            amount_cop=float(service["price"]), customer_email=user["email"],
+            description=f"{service['title']} - Rurapp",
+            success_url=success_url, cancel_url=cancel_url,
+        )
+        session_id, checkout_url, currency = co["session_id"], co["checkout_url"], "cop"
+
     tx = PaymentTransaction(
-        session_id=session.session_id,
-        user_id=user_id,
-        user_email=user["email"],
-        type="booking",
-        reference_id=booking.id,
-        amount=float(service["price"]),
-        currency="usd",
-        status="initiated",
-        payment_status="unpaid",
+        session_id=session_id,
+        user_id=user_id, user_email=user["email"],
+        type="booking", reference_id=booking.id,
+        amount=float(service["price"]), currency=currency,
+        provider=provider, status="initiated", payment_status="unpaid",
         metadata={"booking_id": booking.id},
     )
     await db.payment_transactions.insert_one(tx.model_dump())
     await db.bookings.update_one(
-        {"id": booking.id}, {"$set": {"payment_session_id": session.session_id}}
+        {"id": booking.id}, {"$set": {"payment_session_id": session_id}}
     )
-    return {"booking_id": booking.id, "checkout_url": session.url, "session_id": session.session_id}
+    return {"booking_id": booking.id, "checkout_url": checkout_url, "session_id": session_id, "provider": provider}
 
 
 @api_router.get("/bookings/mine", response_model=List[Booking])
@@ -550,31 +575,41 @@ async def membership_checkout(
     if payload.plan_id not in MEMBERSHIP_PLANS:
         raise HTTPException(status_code=400, detail="Plan inválido")
     plan = MEMBERSHIP_PLANS[payload.plan_id]
+    provider = payload.payment_provider or "stripe"
 
-    stripe = _build_stripe(request)
     success_url = f"{payload.origin_url}/payment/success?session_id={{CHECKOUT_SESSION_ID}}&membership=1"
     cancel_url = f"{payload.origin_url}/membresia"
-    session = await stripe.create_checkout_session(CheckoutSessionRequest(
-        amount=float(plan["price"]),
-        currency="usd",
-        success_url=success_url,
-        cancel_url=cancel_url,
-        metadata={"type": "membership", "plan_id": payload.plan_id, "user_id": user_id},
-    ))
+
+    if provider == "stripe":
+        stripe = _build_stripe(request)
+        session = await stripe.create_checkout_session(CheckoutSessionRequest(
+            amount=float(plan["price"]), currency="usd",
+            success_url=success_url, cancel_url=cancel_url,
+            metadata={"type": "membership", "plan_id": payload.plan_id, "user_id": user_id},
+        ))
+        session_id, checkout_url, currency, amount = session.session_id, session.url, "usd", float(plan["price"])
+    else:
+        # Convert USD to COP for Wompi/MP using a rough rate (real apps fetch live FX)
+        amount_cop = float(plan["price"]) * 4000  # ~4000 COP/USD
+        ref = f"mem_{user_id[:8]}_{payload.plan_id}_{gen_id()[:8]}"
+        co = co_provider_checkout(
+            provider=provider, reference=ref,
+            amount_cop=amount_cop, customer_email=user["email"],
+            description=f"Membresía Rurapp · {plan['name']}",
+            success_url=success_url, cancel_url=cancel_url,
+        )
+        session_id, checkout_url, currency, amount = co["session_id"], co["checkout_url"], "cop", amount_cop
+
     tx = PaymentTransaction(
-        session_id=session.session_id,
-        user_id=user_id,
-        user_email=user["email"],
-        type="membership",
-        reference_id=payload.plan_id,
-        amount=float(plan["price"]),
-        currency="usd",
-        status="initiated",
-        payment_status="unpaid",
+        session_id=session_id,
+        user_id=user_id, user_email=user["email"],
+        type="membership", reference_id=payload.plan_id,
+        amount=amount, currency=currency,
+        provider=provider, status="initiated", payment_status="unpaid",
         metadata={"plan_id": payload.plan_id, "duration_days": plan["duration_days"]},
     )
     await db.payment_transactions.insert_one(tx.model_dump())
-    return {"checkout_url": session.url, "session_id": session.session_id}
+    return {"checkout_url": checkout_url, "session_id": session_id, "provider": provider}
 
 
 # =========================
@@ -586,27 +621,38 @@ async def payment_status(session_id: str, request: Request):
     if not tx:
         raise HTTPException(status_code=404, detail="Transacción no encontrada")
 
-    # If already settled (via webhook or previous poll), return DB state
+    # If already settled, return
     if tx["payment_status"] == "paid" and tx["status"] == "complete":
         return {
-            "status": tx["status"],
-            "payment_status": tx["payment_status"],
-            "type": tx["type"],
-            "reference_id": tx["reference_id"],
+            "status": tx["status"], "payment_status": tx["payment_status"],
+            "type": tx["type"], "reference_id": tx["reference_id"],
         }
 
-    # Try to fetch from Stripe; if that fails, fall back to DB state.
+    provider = tx.get("provider", "stripe")
+
     try:
-        stripe = _build_stripe(request)
-        status = await stripe.get_checkout_status(session_id)
-        new_status = status.status
-        new_payment_status = status.payment_status
+        if provider == "stripe":
+            stripe = _build_stripe(request)
+            status = await stripe.get_checkout_status(session_id)
+            new_status = status.status
+            new_payment_status = status.payment_status
+        elif provider == "wompi":
+            r = wompi().get_status(tx["reference_id"] or session_id)
+            wstatus = (r.get("status") or "").upper()
+            new_status = "complete" if wstatus == "APPROVED" else ("expired" if wstatus in ("DECLINED", "VOIDED") else "open")
+            new_payment_status = "paid" if wstatus == "APPROVED" else "unpaid"
+        elif provider == "mercadopago":
+            r = mercadopago().get_status(session_id)
+            mstatus = (r.get("status") or "").lower()
+            new_status = "complete" if mstatus == "approved" else "open"
+            new_payment_status = "paid" if mstatus == "approved" else "unpaid"
+        else:
+            new_status, new_payment_status = tx["status"], tx["payment_status"]
 
         await db.payment_transactions.update_one(
             {"session_id": session_id},
             {"$set": {
-                "status": new_status,
-                "payment_status": new_payment_status,
+                "status": new_status, "payment_status": new_payment_status,
                 "updated_at": now_iso(),
             }},
         )
@@ -615,45 +661,59 @@ async def payment_status(session_id: str, request: Request):
             await _process_paid_transaction(tx)
 
         return {
-            "status": new_status,
-            "payment_status": new_payment_status,
-            "type": tx["type"],
-            "reference_id": tx["reference_id"],
+            "status": new_status, "payment_status": new_payment_status,
+            "type": tx["type"], "reference_id": tx["reference_id"],
         }
     except Exception as e:
-        logging.warning("Stripe status fetch failed for %s: %s. Using DB state.", session_id, e)
-        # Re-read in case webhook updated it concurrently
+        logging.warning("Status fetch failed for %s (%s): %s", session_id, provider, e)
         latest = await db.payment_transactions.find_one(
             {"session_id": session_id}, {"_id": 0}
         )
         return {
-            "status": latest["status"],
-            "payment_status": latest["payment_status"],
-            "type": latest["type"],
-            "reference_id": latest["reference_id"],
+            "status": latest["status"], "payment_status": latest["payment_status"],
+            "type": latest["type"], "reference_id": latest["reference_id"],
         }
 
 
 async def _process_paid_transaction(tx: dict):
-    """Idempotent business logic upon successful payment."""
+    """Idempotent business logic upon successful payment + email notifications."""
     if tx["type"] == "order":
         order = await db.orders.find_one({"id": tx["reference_id"]}, {"_id": 0})
         if order and order["status"] == "pending_payment":
             await db.orders.update_one(
                 {"id": tx["reference_id"]}, {"$set": {"status": "paid"}}
             )
-            # decrement stock
             for item in order["items"]:
                 await db.products.update_one(
                     {"id": item["product_id"]},
                     {"$inc": {"stock": -item["quantity"]}},
                 )
+            try:
+                await send_order_confirmation(
+                    to_email=tx.get("user_email") or "",
+                    customer_name=order["customer_name"],
+                    order_id=order["id"], total=order["total"],
+                    items_count=len(order["items"]),
+                )
+            except Exception as e:
+                logging.warning("order email error: %s", e)
+
     elif tx["type"] == "booking":
         booking = await db.bookings.find_one({"id": tx["reference_id"]}, {"_id": 0})
         if booking and booking["status"] == "pending_payment":
             await db.bookings.update_one(
                 {"id": tx["reference_id"]}, {"$set": {"status": "confirmed"}}
             )
+            try:
+                await send_booking_confirmation(
+                    to_email=tx.get("user_email") or "",
+                    customer_name=booking["customer_name"],
+                    booking_id=booking["id"], service_title=booking["service_title"],
+                    expert_name=booking["expert_name"], scheduled_at=booking["scheduled_at"],
+                )
+            except Exception as e:
+                logging.warning("booking email error: %s", e)
+
     elif tx["type"] == "membership":
         plan = MEMBERSHIP_PLANS.get(tx["reference_id"])
         if plan and tx.get("user_id"):
@@ -667,6 +727,14 @@ async def _process_paid_transaction(tx: dict):
                     "membership_expires_at": expires,
                 }},
             )
+            try:
+                await send_membership_receipt(
+                    to_email=tx.get("user_email") or "",
+                    name="Usuario", plan_name=plan["name"],
+                    amount=tx["amount"], expires_at=expires[:10],
+                )
+            except Exception as e:
+                logging.warning("membership email error: %s", e)
 
 
 @api_router.post("/webhook/stripe")
@@ -845,6 +913,52 @@ async def ai_history(session_id: str, user_id: str = Depends(get_current_user_id
 # Mount + middleware
 # =========================
 app.include_router(api_router)
+
+# Register extra routes (chat, verification, admin)
+register_extra_routes(app, db)
+
+# Webhooks for COL providers
+@app.post("/api/webhook/wompi")
+async def wompi_webhook(request: Request):
+    try:
+        body = await request.json()
+        # Wompi sends: event, data.transaction.{id, status, reference}
+        data = body.get("data", {}).get("transaction", {})
+        ref = data.get("reference")
+        wstatus = (data.get("status") or "").upper()
+        if ref and wstatus == "APPROVED":
+            tx = await db.payment_transactions.find_one(
+                {"$or": [{"session_id": ref}, {"reference_id": ref}]}, {"_id": 0}
+            )
+            if tx and tx["payment_status"] != "paid":
+                await db.payment_transactions.update_one(
+                    {"id": tx["id"]},
+                    {"$set": {"status": "complete", "payment_status": "paid", "updated_at": now_iso()}},
+                )
+                await _process_paid_transaction(tx)
+    except Exception as e:
+        logging.warning("Wompi webhook error: %s", e)
+    return {"received": True}
+
+
+@app.post("/api/webhook/mercadopago")
+async def mp_webhook(request: Request):
+    try:
+        body = await request.json()
+        data_id = body.get("data", {}).get("id") or body.get("resource")
+        if data_id:
+            tx = await db.payment_transactions.find_one(
+                {"session_id": str(data_id)}, {"_id": 0}
+            )
+            if tx and tx["payment_status"] != "paid":
+                await db.payment_transactions.update_one(
+                    {"id": tx["id"]},
+                    {"$set": {"status": "complete", "payment_status": "paid", "updated_at": now_iso()}},
+                )
+                await _process_paid_transaction(tx)
+    except Exception as e:
+        logging.warning("MP webhook error: %s", e)
+    return {"received": True}
 
 app.add_middleware(
     CORSMiddleware,

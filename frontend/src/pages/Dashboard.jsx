@@ -49,6 +49,28 @@ export default function Dashboard() {
                 <Link to="/perfil" className="btn-outline" data-testid="edit-profile-btn">Editar perfil</Link>
             </div>
 
+            {/* Admin link */}
+            {user.is_admin && (
+                <Link to="/admin" className="card-rurapp mb-4 bg-rurapp-forest text-white flex items-center justify-between" data-testid="goto-admin">
+                    <div>
+                        <h3 className="font-heading font-semibold">Panel de administración</h3>
+                        <p className="text-white/80 text-sm">Revisar verificaciones de profesionales</p>
+                    </div>
+                    <span className="text-2xl">→</span>
+                </Link>
+            )}
+
+            {/* Verification CTA for vets */}
+            {user.role === "veterinario" && user.verification_status !== "approved" && (
+                <Link to="/verificacion" className="card-rurapp mb-4 bg-rurapp-leaf border-rurapp-forest flex items-center justify-between" data-testid="goto-verification">
+                    <div>
+                        <h3 className="font-heading font-semibold text-rurapp-forest">Verifica tu perfil profesional</h3>
+                        <p className="text-rurapp-inkSoft text-sm">Genera más confianza con un sello "Verificado"</p>
+                    </div>
+                    <span className="text-rurapp-forest text-2xl">→</span>
+                </Link>
+            )}
+
             {/* Membership warning */}
             {(user.role === "productor" || user.role === "veterinario") && !user.membership_active && (
                 <div className="mb-6 card-rurapp bg-rurapp-earth/10 border-rurapp-earth flex items-start gap-3" data-testid="membership-warning">

@@ -1,4 +1,5 @@
 import "@/App.css";
+import "leaflet/dist/leaflet.css";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./lib/auth";
 import { CartProvider } from "./lib/cart";
@@ -23,6 +24,10 @@ import Membership from "./pages/Membership";
 import Profile from "./pages/Profile";
 import { Articles, ArticleDetail, NewArticle } from "./pages/Articles";
 import PublicProfile from "./pages/PublicProfile";
+import MapaPage from "./pages/Mapa";
+import { ConversationsList, ChatRoom } from "./pages/Chat";
+import Verification from "./pages/Verification";
+import AdminPanel from "./pages/Admin";
 
 function Protected({ children }) {
     const { user, loading } = useAuth();
@@ -44,6 +49,7 @@ function App() {
                                 <Route path="/register" element={<Register />} />
                                 <Route path="/marketplace" element={<Marketplace />} />
                                 <Route path="/servicios" element={<Servicios />} />
+                                <Route path="/mapa" element={<MapaPage />} />
                                 <Route path="/producto/:id" element={<ProductDetail />} />
                                 <Route path="/servicio/:id" element={<ServiceDetail />} />
                                 <Route path="/cart" element={<Cart />} />
@@ -68,6 +74,10 @@ function App() {
                                 <Route path="/mis-citas" element={<Protected><MyBookings /></Protected>} />
                                 <Route path="/pedidos-recibidos" element={<Protected><ReceivedOrders /></Protected>} />
                                 <Route path="/citas-recibidas" element={<Protected><ReceivedBookings /></Protected>} />
+                                <Route path="/chat" element={<Protected><ConversationsList /></Protected>} />
+                                <Route path="/chat/:id" element={<Protected><ChatRoom /></Protected>} />
+                                <Route path="/verificacion" element={<Protected><Verification /></Protected>} />
+                                <Route path="/admin" element={<Protected><AdminPanel /></Protected>} />
                             </Routes>
                         </Layout>
                         <Toaster position="top-right" richColors />

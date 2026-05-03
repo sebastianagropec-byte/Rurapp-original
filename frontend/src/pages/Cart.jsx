@@ -4,6 +4,7 @@ import { useCart } from "../lib/cart";
 import { useAuth } from "../lib/auth";
 import { api } from "../lib/api";
 import { ShoppingBasket, Trash2, ArrowRight } from "lucide-react";
+import PaymentProviderSelector from "../components/PaymentProviderSelector";
 
 export default function Cart() {
     const { items, updateQty, removeItem, total, clear } = useCart();
@@ -11,6 +12,7 @@ export default function Cart() {
     const navigate = useNavigate();
     const [address, setAddress] = useState("");
     const [notes, setNotes] = useState("");
+    const [provider, setProvider] = useState("stripe");
     const [loading, setLoading] = useState(false);
     const [err, setErr] = useState("");
 
@@ -25,6 +27,7 @@ export default function Cart() {
                 delivery_address: address,
                 notes,
                 origin_url: window.location.origin,
+                payment_provider: provider,
             });
             clear();
             window.location.href = data.checkout_url;
@@ -89,6 +92,7 @@ export default function Cart() {
                                 <span className="text-sm font-medium">Notas</span>
                                 <textarea rows={2} className="input-rurapp mt-1" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Indicaciones extra" data-testid="checkout-notes" />
                             </label>
+                            <PaymentProviderSelector value={provider} onChange={setProvider} dataTestPrefix="cart-pp" />
                             <button disabled={loading} className="btn-primary w-full" data-testid="checkout-submit">{loading ? "Procesando…" : "Pagar"}</button>
                         </form>
                     </div>

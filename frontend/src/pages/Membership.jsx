@@ -3,12 +3,14 @@ import { useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { Check, Sparkles, Crown } from "lucide-react";
+import PaymentProviderSelector from "../components/PaymentProviderSelector";
 
 export default function Membership() {
     const { user } = useAuth();
     const navigate = useNavigate();
     const [plans, setPlans] = useState([]);
     const [loading, setLoading] = useState("");
+    const [provider, setProvider] = useState("stripe");
 
     useEffect(() => { api.get("/memberships/plans").then((r) => setPlans(r.data)); }, []);
 
@@ -21,7 +23,7 @@ export default function Membership() {
         setLoading(id);
         try {
             const { data } = await api.post("/memberships/checkout", {
-                plan_id: id, origin_url: window.location.origin,
+                plan_id: id, origin_url: window.location.origin, payment_provider: provider,
             });
             window.location.href = data.checkout_url;
         } catch (e) {
@@ -48,8 +50,7 @@ export default function Membership() {
 
             <div className="grid md:grid-cols-2 gap-6">
                 {plans.map((p) => (
-                    <div key={p.id} className={`card-rurapp ${p.id === "pro" ? "ring-2 ring-rurapp-forest" : ""}`} data-testid={`plan-${p.id}`}>
-                        <div className="flex items-center gap-2 mb-2">
+                    <div key={p.id} className={`card-rurapp ${p.id === "pro" ? "ring-2 ring-rurapp-forest" : ""}`} data-testid={`plan-${p.id}`}>                        <div className="flex items-center gap-2 mb-2">
                             {p.id === "pro" ? <Crown className="h-5 w-5 text-rurapp-earth" /> : <Sparkles className="h-5 w-5 text-rurapp-forest" />}
                             <h3 className="font-heading text-2xl font-bold">{p.name}</h3>
                             {p.id === "pro" && <span className="ml-auto chip-earth">Recomendado</span>}
@@ -83,6 +84,11 @@ export default function Membership() {
                     </div>
                 ))}
             </div>
+            {(user?.role === "productor" || user?.role === "veterinario") && (
+                <div className="card-rurapp mt-6 max-w-md mx-auto">
+                    <PaymentProviderSelector value={provider} onChange={setProvider} dataTestPrefix="mem-pp" />
+                </div>
+            )}
         </div>
     );
 }
