@@ -1,0 +1,142 @@
+{
+  "theme": "light",
+  "archetype": "1_organic_earthy",
+  "core_principles": [
+    "High-Contrast, Sunlight-Optimized: Ensure 7:1+ contrast ratio on data points for outdoor readability.",
+    "Literal Icons: Use explicit iconography (e.g. realistic crop shapes) rather than abstract vectors.",
+    "One-Handed Navigation: Large 48px+ touch targets in the lower third of the screen, adapted for 'fat-finger' errors.",
+    "Role-Based Simple Views: Progressive disclosure that tailors views for Campesinos (production), Vets (scheduling), and Urban Consumers (marketplace)."
+  ],
+  "typography": {
+    "heading_font": "Outfit",
+    "body_font": "Work Sans",
+    "font_pairings": [
+      {
+        "role": "hero",
+        "classes": "font-outfit text-4xl sm:text-5xl font-semibold tracking-tight text-slate-900"
+      },
+      {
+        "role": "section_heading",
+        "classes": "font-outfit text-2xl sm:text-3xl font-medium tracking-tight text-slate-800"
+      },
+      {
+        "role": "body_text",
+        "classes": "font-worksans text-base font-normal leading-relaxed text-slate-700"
+      },
+      {
+        "role": "overline",
+        "classes": "font-outfit text-xs font-bold uppercase tracking-[0.2em] text-primary"
+      }
+    ]
+  },
+  "colors": {
+    "primary": {
+      "DEFAULT": "#2D5A27",
+      "hover": "#21431D",
+      "light": "#EAF0E9"
+    },
+    "secondary": {
+      "DEFAULT": "#D4A373",
+      "hover": "#C08F5D"
+    },
+    "background": {
+      "DEFAULT": "#FDFBF7",
+      "surface": "#FFFFFF",
+      "muted": "#F3F0E6"
+    },
+    "text": {
+      "primary": "#1C1C1C",
+      "secondary": "#4A4A4A",
+      "muted": "#7A7A7A"
+    },
+    "border": {
+      "DEFAULT": "#E6E2D8",
+      "strong": "#D1CBB8"
+    },
+    "status": {
+      "success": "#4CAF50",
+      "warning": "#FF9800",
+      "error": "#F44336"
+    }
+  },
+  "spacing_and_layout": {
+    "padding": {
+      "container": "p-4 md:p-8",
+      "card": "p-6",
+      "button": "px-6 py-3"
+    },
+    "radius": {
+      "card": "rounded-2xl",
+      "button": "rounded-xl",
+      "input": "rounded-xl"
+    },
+    "grid": {
+      "mobile": "grid-cols-1 gap-4",
+      "tablet": "md:grid-cols-2 gap-6",
+      "desktop": "lg:grid-cols-3 xl:grid-cols-4 gap-8"
+    }
+  },
+  "components": {
+    "buttons": {
+      "primary": "bg-[#2D5A27] text-white hover:bg-[#21431D] rounded-xl px-6 py-3 font-medium transition-colors focus:ring-2 focus:ring-[#2D5A27] focus:ring-offset-2",
+      "secondary": "bg-[#D4A373] text-white hover:bg-[#C08F5D] rounded-xl px-6 py-3 font-medium transition-colors",
+      "outline": "border-2 border-[#2D5A27] text-[#2D5A27] hover:bg-[#2D5A27] hover:text-white rounded-xl px-6 py-3 font-medium transition-colors",
+      "ghost": "text-[#2D5A27] hover:bg-[#EAF0E9] rounded-xl px-4 py-2 font-medium transition-colors"
+    },
+    "cards": {
+      "default": "bg-white rounded-2xl border border-[#E6E2D8] shadow-sm hover:shadow-md transition-shadow p-6",
+      "interactive": "bg-white rounded-2xl border border-[#E6E2D8] shadow-sm hover:shadow-md hover:-translate-y-1 transition-all cursor-pointer p-6"
+    },
+    "navigation": {
+      "mobile_bottom_bar": "fixed bottom-0 w-full bg-white border-t border-[#E6E2D8] pb-safe pt-2 px-4 flex justify-around items-center z-50",
+      "header": "sticky top-0 bg-[#FDFBF7] border-b border-[#E6E2D8] z-40 px-4 py-3"
+    },
+    "inputs": {
+      "default": "w-full border-2 border-[#E6E2D8] rounded-xl px-4 py-3 bg-white focus:border-[#2D5A27] focus:ring-0 outline-none transition-colors text-base"
+    }
+  },
+  "icons_library": "lucide-react",
+  "media": {
+    "images": [
+      {
+        "category": "hero_background",
+        "url": "https://images.unsplash.com/photo-1721594489120-880ba23d61dd?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2Njl8MHwxfHNlYXJjaHwxfHxmYXJtZXIlMjBhZ3JpY3VsdHVyZSUyMGhhcnZlc3R8ZW58MHx8fHwxNzc3ODIzMTA0fDA&ixlib=rb-4.1.0&q=85",
+        "description": "Aerial view of a farm field with tractor"
+      },
+      {
+        "category": "product_vegetables",
+        "url": "https://images.pexels.com/photos/35770688/pexels-photo-35770688.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+        "description": "Fresh vegetables at a market stall"
+      },
+      {
+        "category": "product_fruits",
+        "url": "https://images.unsplash.com/photo-1553799262-a37c45961038?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA0MTJ8MHwxfHNlYXJjaHwyfHxmcmVzaCUyMHZlZ2V0YWJsZXMlMjBtYXJrZXR8ZW58MHx8fHwxNzc3ODIzMTA0fDA&ixlib=rb-4.1.0&q=85",
+        "description": "Assorted fresh fruits"
+      },
+      {
+        "category": "service_veterinary",
+        "url": "https://images.unsplash.com/photo-1654119938236-de0d8ed4641d?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA3MDB8MHwxfHNlYXJjaHwxfHx2ZXRlcmluYXJpYW4lMjBmYXJtJTIwYW5pbWFsJTIwY293c3xlbnwwfHx8fDE3Nzc4MjMwODl8MA&ixlib=rb-4.1.0&q=85",
+        "description": "Close up of a cow, representing farm animal veterinary services"
+      },
+      {
+        "category": "education_greenhouse",
+        "url": "https://images.unsplash.com/photo-1720420866040-222a0b942ab4?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2Njl8MHwxfHNlYXJjaHw0fHxmYXJtZXIlMjBhZ3JpY3VsdHVyZSUyMGhhcnZlc3R8ZW58MHx8fHwxNzc3ODIzMTA0fDA&ixlib=rb-4.1.0&q=85",
+        "description": "Greenhouse planting for educational/best practices feed"
+      }
+    ]
+  },
+  "instructions_to_main_agent": [
+    "Design mobile-first. Prioritize bottom navigation for core user tasks since farmers operate one-handed in fields.",
+    "Implement high contrast colors: Always use #1C1C1C for text on light backgrounds to ensure readability outdoors under sunlight.",
+    "Data-testid is MANDATORY. Add 'data-testid' attributes to all interactive elements, e.g., data-testid='add-product-btn'.",
+    "Use literal language. Avoid abstract tech jargon (e.g., instead of 'Dashboard', use 'Mi Finca' or 'Mis Cultivos').",
+    "Do NOT use glassmorphism. It reduces legibility outdoors. Use solid backgrounds with crisp 1px borders and distinct shadows.",
+    "Make touch targets large: Minimum 48px height for all buttons and inputs.",
+    "Images should have a max-height of 40vh on mobile to prevent losing context of the page."
+  ],
+  "accessibility": {
+    "contrast_ratio": "Target 7:1 for text-to-background to account for harsh outdoor sunlight.",
+    "touch_targets": "Minimum 48x48px for all interactive elements.",
+    "motion": "Use minimal, purposeful motion. Support prefers-reduced-motion."
+  }
+}
