@@ -122,14 +122,18 @@ async def register(payload: UserCreate):
         "phone": payload.phone,
         "location": payload.location,
         "bio": payload.bio,
+        "lat": payload.lat,
+        "lng": payload.lng,
         "avatar_url": None,
         "sustainable_practices": [],
         "specialty": None,
         "verified": False,
+        "verification_status": "none",
         "membership_active": payload.role == "cliente",  # clients don't need membership
         "membership_expires_at": None,
         "rating_avg": 0.0,
         "rating_count": 0,
+        "is_admin": False,
         "created_at": now_iso(),
     }
     await db.users.insert_one(user_doc)

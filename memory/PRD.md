@@ -38,12 +38,27 @@ Plataforma web AgTech para Colombia que conecta el campo y la ciudad: productore
 - ✅ Bottom nav móvil + top bar desktop
 - ✅ Botones grandes (48px+) y alto contraste para uso al aire libre
 - ✅ Tipografías: Outfit (títulos) + Work Sans (cuerpo)
-- ✅ Datos demo (3 usuarios, 6 productos, 4 servicios, 3 artículos)
+- ✅ Datos demo (4 usuarios, 6 productos, 4 servicios, 3 artículos)
+
+## Phase 2 (Feb 2026)
+- ✅ **Mapa interactivo Leaflet + OpenStreetMap** con marcadores diferenciados (productor verde / experto terracota), página `/mapa` con filtros + mini-mapa en perfiles públicos
+- ✅ **Geolocalización**: campos `lat`/`lng` en User, persistidos en registro y editables en perfil
+- ✅ **Chat en tiempo real con WebSocket** (`/api/ws/chat?token=<jwt>`) + REST de conversaciones y mensajes; botones "Enviar mensaje" en perfiles, ProductDetail y ServiceDetail
+- ✅ **Notificación de chat por email** cuando el destinatario está offline (vía SendGrid, MOCKED)
+- ✅ **Pagos Wompi (Colombia)** y **MercadoPago** como alternativas a Stripe; selector visual de método de pago en checkout/booking/membresía
+- ✅ Conversión USD→COP automática para membresías cuando se paga vía Wompi/MP (~4000 COP/USD)
+- ✅ Webhooks `/api/webhook/wompi` y `/api/webhook/mercadopago` con procesamiento idempotente
+- ✅ **Verificación de veterinarios con IA + admin combinada**: Claude Sonnet 4.5 pre-analiza coherencia, admin confirma manualmente. Estados: `none → pending → ai_approved → approved/rejected`. Página `/verificacion`
+- ✅ **Panel de administración** (`/admin`): listado filtrable de verificaciones, aprobar/rechazar con notas, vista del análisis IA. Acceso por flag `is_admin` o `ADMIN_EMAILS` env
+- ✅ **Notificaciones email transaccionales SendGrid**: confirmación de pedido, cita, recibo de membresía, mensaje de chat offline (todos MOCKED hasta tener API key)
+- ✅ Usuario admin demo: `admin@rurapp.co / rurapp123`
+- ✅ Test coverage: 92/93 backend tests passing (98.9%) en iteration_2
 
 ## Test credentials
-- `campesino@rurapp.co` / `rurapp123` — Productor (membresía activa)
-- `vet@rurapp.co` / `rurapp123` — Veterinario (membresía activa)
+- `campesino@rurapp.co` / `rurapp123` — Productor (membresía activa, verificado)
+- `vet@rurapp.co` / `rurapp123` — Veterinario (membresía activa, verificado)
 - `cliente@rurapp.co` / `rurapp123` — Cliente
+- `admin@rurapp.co` / `rurapp123` — Administrador (acceso a `/admin`)
 
 ## Backlog (P1 - próximas iteraciones)
 - Google OAuth login (actualmente solo email/password)
