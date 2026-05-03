@@ -1,0 +1,77 @@
+{
+  "summary": "First-iteration backend API testing for Rurapp. Exercised 52 test cases across health, auth, users, products (incl. 402 membership gate), services, orders, bookings, memberships, reviews, articles, AI chat and payment-status endpoints. 48 passed, 3 failed (2 Stripe status retrieval failures rooted in the emergentintegrations library, 1 AI chat failure caused by EMERGENT_LLM_KEY budget exhaustion after the first successful call). Core business flows (auth, RBAC, CRUD, pricing gates, Stripe checkout session creation returning checkout_url, Claude AI chat + history, reviews with aggregate rating update, article like counter) all work correctly.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "GET /api/payments/status/{session_id} (for orders)",
+        "issue": "Returns 500 instead of 200. Root cause in emergentintegrations library: `StripeCheckout.get_checkout_status` raises `CheckoutError: Unexpected error retrieving session status: 1 validation error for CheckoutStatusResponse metadata Input should be a valid dictionary, input_value=<StripeObject ...>`. The library's Pydantic model expects `metadata: dict` but Stripe returns a `StripeObject`. Our route does not catch this exception, so 500 propagates. Mitigation: wrap `await stripe.get_checkout_status(...)` in try/except returning a 502 with readable detail, OR serialize the StripeObject to dict inside the library (library-side fix preferred).",
+        "priority": "HIGH"
+      },
+      {
+        "endpoint": "GET /api/payments/status/{session_id} (for bookings/memberships)",
+        "issue": "Returns 500 with `stripe._error.InvalidRequestError: No such checkout.session: cs_test_...`. The session was just created successfully by the Emergent Stripe proxy (POST /stripe/v1/checkout/sessions → 200) but a subsequent GET on the same id 404s via the same proxy. Appears to be a data-consistency issue in the Emergent Stripe test proxy. No app-side bug, but route should handle the exception and return a structured error instead of 500.",
+        "priority": "HIGH"
+      },
+      {
+        "endpoint": "POST /api/ai/chat",
+        "issue": "After one or two successful Claude calls, subsequent calls fail with 500: `litellm.BadRequestError: OpenAIException - Budget has been exceeded! Current cost: 0.004296, Max budget: 0.001`. The EMERGENT_LLM_KEY configured in /app/backend/.env has a very low per-key budget and gets exhausted quickly. First call in iteration 1 passed, so the integration/route code is correct. Main-agent action: request a higher-budget key or surface a friendlier error to the UI when budget is exceeded.",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "POST /api/auth/register",
+        "issue": "Server lowercases email (correct behaviour) but this is undocumented; clients must be aware that `user.email` may differ from submitted case."
+      },
+      {
+        "endpoint": "POST /api/webhook/stripe",
+        "issue": "Webhook silently swallows all exceptions (`except Exception`). Consider logging structured error and returning 400 when signature invalid so Stripe will retry correctly."
+      },
+      {
+        "endpoint": "POST /api/articles/{id}/like",
+        "issue": "No dedupe per-user; a single user can like repeatedly and inflate the counter. Consider a `article_likes` collection keyed by (article_id, user_id)."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Wrap `stripe.get_checkout_status(session_id)` in /api/payments/status/{session_id} with try/except so upstream Stripe / emergentintegrations errors don't leak as 500 to clients. Return 502 with a readable Spanish detail.",
+    "Report/patch the emergentintegrations CheckoutStatusResponse metadata validation bug (StripeObject vs dict).",
+    "Request a higher-budget EMERGENT_LLM_KEY or cache AI replies in dev to avoid hitting the $0.001 budget after one call.",
+    "Add per-user dedupe for POST /api/articles/{id}/like.",
+    "Document in README that emails are normalized to lowercase on register/login."
+  ],
+  "critical_code_review_comments": [
+    "server.py ~850 lines - acceptable but approaching split threshold; consider modularizing into routers/ (auth, products, services, payments, ai) before adding more endpoints.",
+    "/api/payments/status/{session_id} performs unauthenticated lookups by session_id. Anyone with a session_id string can probe the status. Low risk since ids are opaque, but consider requiring auth and verifying `tx.user_id == current_user`.",
+    "/api/webhook/stripe: `except Exception` catches everything including signature-verification failures. Stripe's recommendation is to return non-2xx so it retries; currently always returns `{received: true}`.",
+    "/api/articles/{id}/like: no authz-based dedupe; counter is easily inflated.",
+    "`_process_paid_transaction` decrements stock without a transaction. Under concurrency two payments could over-decrement. Use `$inc` with a conditional filter (`{stock: {$gte: qty}}`) or a session/transaction.",
+    "Stripe amount is taken from backend (good: server-side pricing). However `amount` sent to Stripe is in dollars via emergentintegrations; verify the library converts to cents to avoid 100x under-billing in live mode.",
+    "JWT secret hardcoded fallback in .env — OK, but ensure JWT_SECRET rotation strategy is documented for prod.",
+    "No rate limiting on /api/auth/login or /api/ai/chat - vulnerable to brute force / cost abuse.",
+    "/api/reviews does NOT verify the author actually purchased/consumed the target (customer could review any product/user/service). Consider requiring a paid order/booking before allowing a review.",
+    "Location filter uses regex without escaping user input -> ReDoS risk and regex-injection (e.g. location=.* slows query). Escape regex special chars with re.escape."
+  ],
+  "updated_files": [
+    "/app/backend/tests/backend_test.py (new)"
+  ],
+  "success_rate": {
+    "backend": "92% (48/52 tests pass; 3 failures rooted in external Emergent Stripe proxy + LLM budget, not app code)",
+    "frontend": "not tested (backend-only request)"
+  },
+  "test_credentials": "campesino@rurapp.co / rurapp123 (productor, membership active); vet@rurapp.co / rurapp123 (veterinario, membership active); cliente@rurapp.co / rurapp123 (cliente). Seed via `cd /app/backend && python seed.py`.",
+  "seed_data_creation": "Tests create TEST_ prefixed products, services, articles and `test_*@test.co` user accounts. Not cleaned up (idempotent - each run uses uuid suffix). Main agent can purge with `db.{products,services,articles}.deleteMany({name: /^TEST_/})` and `db.users.deleteMany({email: /^test_/})`.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "backend_test.py is pytest-based and idempotent. Run: `pytest /app/backend/tests/backend_test.py -v`. The AI chat test may or may not pass depending on EMERGENT_LLM_KEY budget at the moment. The two /api/payments/status/{session_id} tests will keep failing until either (a) the emergentintegrations Stripe wrapper is patched, or (b) the app route wraps the call in try/except. Frontend has not been tested yet.",
+  "rca_of_the_issue": "1) Payment-status for orders: emergentintegrations library's Pydantic `CheckoutStatusResponse` declares `metadata: dict` but Stripe SDK returns a `StripeObject` that Pydantic v2 rejects -> 500. Reproduce: POST /api/orders then GET /api/payments/status/{session_id}. Fix: either convert via `dict(obj)` inside library, or patch our route to catch CheckoutError and return 502 + last-known DB status. 2) Payment-status for bookings/memberships: Emergent Stripe proxy inconsistency (session created 200, retrieve 404). Reproduce likewise. Only mitigation on our side is defensive error handling on the route. 3) AI chat 500: EMERGENT_LLM_KEY budget is $0.001 which is lower than one Claude Sonnet 4.5 call (~$0.004). Reproduce: run `/api/ai/chat` twice. Mitigation: use a higher-budget key."
+}
