@@ -586,7 +586,7 @@ async def payment_status(session_id: str, request: Request):
     if not tx:
         raise HTTPException(status_code=404, detail="Transacción no encontrada")
 
-    # If already settled, return
+    # If already settled (via webhook or previous poll), return DB state
     if tx["payment_status"] == "paid" and tx["status"] == "complete":
         return {
             "status": tx["status"],
@@ -595,31 +595,43 @@ async def payment_status(session_id: str, request: Request):
             "reference_id": tx["reference_id"],
         }
 
-    stripe = _build_stripe(request)
-    status = await stripe.get_checkout_status(session_id)
+    # Try to fetch from Stripe; if that fails, fall back to DB state.
+    try:
+        stripe = _build_stripe(request)
+        status = await stripe.get_checkout_status(session_id)
+        new_status = status.status
+        new_payment_status = status.payment_status
 
-    new_status = status.status
-    new_payment_status = status.payment_status
+        await db.payment_transactions.update_one(
+            {"session_id": session_id},
+            {"$set": {
+                "status": new_status,
+                "payment_status": new_payment_status,
+                "updated_at": now_iso(),
+            }},
+        )
 
-    await db.payment_transactions.update_one(
-        {"session_id": session_id},
-        {"$set": {
+        if new_payment_status == "paid" and tx["payment_status"] != "paid":
+            await _process_paid_transaction(tx)
+
+        return {
             "status": new_status,
             "payment_status": new_payment_status,
-            "updated_at": now_iso(),
-        }},
-    )
-
-    # Idempotent post-payment processing
-    if new_payment_status == "paid" and tx["payment_status"] != "paid":
-        await _process_paid_transaction(tx)
-
-    return {
-        "status": new_status,
-        "payment_status": new_payment_status,
-        "type": tx["type"],
-        "reference_id": tx["reference_id"],
-    }
+            "type": tx["type"],
+            "reference_id": tx["reference_id"],
+        }
+    except Exception as e:
+        logging.warning("Stripe status fetch failed for %s: %s. Using DB state.", session_id, e)
+        # Re-read in case webhook updated it concurrently
+        latest = await db.payment_transactions.find_one(
+            {"session_id": session_id}, {"_id": 0}
+        )
+        return {
+            "status": latest["status"],
+            "payment_status": latest["payment_status"],
+            "type": latest["type"],
+            "reference_id": latest["reference_id"],
+        }
 
 
 async def _process_paid_transaction(tx: dict):
@@ -792,7 +804,13 @@ async def ai_chat(
         reply = await chat.send_message(UserMessage(text=payload.message))
     except Exception as e:
         logging.exception("AI chat error")
-        raise HTTPException(status_code=500, detail=f"Error en asistente IA: {str(e)}")
+        msg = str(e)
+        if "Budget" in msg or "budget" in msg:
+            raise HTTPException(
+                status_code=503,
+                detail="El asistente Rura está temporalmente fuera de servicio (límite alcanzado). Intenta más tarde.",
+            )
+        raise HTTPException(status_code=500, detail=f"Error en asistente IA: {msg[:200]}")
 
     # Persist conversation
     await db.ai_messages.insert_one({
