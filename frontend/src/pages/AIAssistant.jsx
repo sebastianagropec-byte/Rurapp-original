@@ -6,7 +6,7 @@ import { Sparkles, Send, Bot, User } from "lucide-react";
 export default function AIAssistant() {
     const { user } = useAuth();
     const [messages, setMessages] = useState([
-        { role: "assistant", content: "Hola, soy Rura, tu asistente del campo. Pregúntame sobre cultivos, salud animal, sostenibilidad o cómo vender tus productos." },
+        { id: "init", role: "assistant", content: "Hola, soy Rura, tu asistente del campo. Pregúntame sobre cultivos, salud animal, sostenibilidad o cómo vender tus productos." },
     ]);
     const [input, setInput] = useState("");
     const [sessionId, setSessionId] = useState(null);
@@ -32,15 +32,16 @@ export default function AIAssistant() {
         e.preventDefault();
         if (!input.trim() || loading) return;
         const text = input.trim();
-        setMessages((p) => [...p, { role: "user", content: text }]);
+        const userMsgId = `u_${Date.now()}`;
+        setMessages((p) => [...p, { id: userMsgId, role: "user", content: text }]);
         setInput("");
         setLoading(true);
         try {
             const { data } = await api.post("/ai/chat", { message: text, session_id: sessionId });
             setSessionId(data.session_id);
-            setMessages((p) => [...p, { role: "assistant", content: data.reply }]);
-        } catch (e) {
-            setMessages((p) => [...p, { role: "assistant", content: "Tuve un problema para responder. Intenta de nuevo." }]);
+            setMessages((p) => [...p, { id: `a_${Date.now()}`, role: "assistant", content: data.reply }]);
+        } catch (_e) {
+            setMessages((p) => [...p, { id: `e_${Date.now()}`, role: "assistant", content: "Tuve un problema para responder. Intenta de nuevo." }]);
         } finally { setLoading(false); }
     };
 
@@ -63,8 +64,8 @@ export default function AIAssistant() {
             </div>
 
             <div ref={scroller} className="flex-1 overflow-y-auto space-y-3 pr-1">
-                {messages.map((m, i) => (
-                    <div key={i} className={`flex gap-2 ${m.role === "user" ? "justify-end" : ""}`} data-testid={`msg-${i}`}>
+                {messages.map((m) => (
+                    <div key={m.id} className={`flex gap-2 ${m.role === "user" ? "justify-end" : ""}`} data-testid={`msg-${m.id}`}>
                         {m.role === "assistant" && (
                             <div className="h-9 w-9 rounded-xl bg-rurapp-leaf flex items-center justify-center flex-shrink-0">
                                 <Bot className="h-5 w-5 text-rurapp-forest" />
@@ -89,8 +90,8 @@ export default function AIAssistant() {
 
             {messages.length <= 1 && (
                 <div className="flex flex-wrap gap-2 my-3">
-                    {quick.map((q, i) => (
-                        <button key={i} onClick={() => setInput(q)} className="chip-earth hover:bg-rurapp-earth hover:text-white" data-testid={`quick-${i}`}>{q}</button>
+                    {quick.map((q) => (
+                        <button key={q} onClick={() => setInput(q)} className="chip-earth hover:bg-rurapp-earth hover:text-white" data-testid={`quick-${q.slice(0, 20)}`}>{q}</button>
                     ))}
                 </div>
             )}

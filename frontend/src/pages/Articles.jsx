@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
@@ -19,6 +19,21 @@ export function Articles() {
     }, [category]);
 
     const canPost = user?.role === "veterinario" || user?.role === "productor";
+
+    const renderedArticles = useMemo(() => articles.map((a) => (
+        <Link to={`/contenido/${a.id}`} key={a.id} className="card-rurapp p-0 overflow-hidden hover:-translate-y-1 transition-all" data-testid={`article-${a.id}`}>
+            {a.image_url && <img src={a.image_url} alt={a.title} className="h-40 w-full object-cover" />}
+            <div className="p-4">
+                <span className="chip">{a.category?.replace("_", " ")}</span>
+                <h3 className="font-heading font-semibold mt-2 line-clamp-2">{a.title}</h3>
+                <p className="text-sm text-rurapp-inkSoft mt-1 line-clamp-2">{a.content}</p>
+                <div className="mt-3 flex items-center justify-between text-xs text-rurapp-inkMuted">
+                    <span>Por {a.author_name}</span>
+                    <span className="inline-flex items-center gap-1"><Heart className="h-3 w-3" /> {a.likes}</span>
+                </div>
+            </div>
+        </Link>
+    )), [articles]);
 
     return (
         <div className="container-rurapp py-8" data-testid="articles-page">
@@ -45,20 +60,7 @@ export function Articles() {
                 </div>
             ) : (
                 <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
-                    {articles.map((a) => (
-                        <Link to={`/contenido/${a.id}`} key={a.id} className="card-rurapp p-0 overflow-hidden hover:-translate-y-1 transition-all" data-testid={`article-${a.id}`}>
-                            {a.image_url && <img src={a.image_url} alt={a.title} className="h-40 w-full object-cover" />}
-                            <div className="p-4">
-                                <span className="chip">{a.category?.replace("_", " ")}</span>
-                                <h3 className="font-heading font-semibold mt-2 line-clamp-2">{a.title}</h3>
-                                <p className="text-sm text-rurapp-inkSoft mt-1 line-clamp-2">{a.content}</p>
-                                <div className="mt-3 flex items-center justify-between text-xs text-rurapp-inkMuted">
-                                    <span>Por {a.author_name}</span>
-                                    <span className="inline-flex items-center gap-1"><Heart className="h-3 w-3" /> {a.likes}</span>
-                                </div>
-                            </div>
-                        </Link>
-                    ))}
+                    {renderedArticles}
                 </div>
             )}
         </div>

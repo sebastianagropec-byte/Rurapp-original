@@ -78,6 +78,7 @@ async def ocr_verify_document(
         "RAZON: <1-2 frases>"
     )
 
+    reply = ""
     try:
         chat = LlmChat(
             api_key=EMERGENT_LLM_KEY,

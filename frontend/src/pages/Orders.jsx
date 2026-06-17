@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { Package, Calendar } from "lucide-react";
@@ -41,7 +41,7 @@ export function MyOrders() {
                                 <span className={`text-sm px-3 py-1 rounded-full ${STATUS_CLASS[o.status] || "bg-rurapp-sand"}`}>{STATUS_LABEL[o.status] || o.status}</span>
                             </div>
                             <div className="mt-3 grid sm:grid-cols-2 gap-2 text-sm text-rurapp-inkSoft">
-                                {o.items.map((it, i) => <div key={i}>· {it.product_name} ×{it.quantity}</div>)}
+                                {o.items.map((it) => <div key={it.product_id}>· {it.product_name} ×{it.quantity}</div>)}
                             </div>
                             <div className="mt-3 flex justify-between items-center pt-3 border-t border-rurapp-edge">
                                 <span className="text-rurapp-inkSoft text-sm">Entrega: {o.delivery_address}</span>
@@ -109,7 +109,7 @@ export function ReceivedOrders() {
                             </div>
                             <div className="text-sm text-rurapp-inkSoft mt-1">{o.delivery_address}</div>
                             <div className="mt-3 grid sm:grid-cols-2 gap-2 text-sm">
-                                {o.items.filter((it) => it.producer_id === user.id).map((it, i) => <div key={i}>· {it.product_name} ×{it.quantity} · ${it.subtotal.toLocaleString("es-CO")}</div>)}
+                                {o.items.filter((it) => it.producer_id === user.id).map((it) => <div key={it.product_id}>· {it.product_name} ×{it.quantity} · ${it.subtotal.toLocaleString("es-CO")}</div>)}
                             </div>
                         </div>
                     ))}

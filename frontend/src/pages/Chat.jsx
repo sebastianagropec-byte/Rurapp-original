@@ -57,14 +57,20 @@ export function ChatRoom() {
 
     useEffect(() => {
         if (!user) return;
-        api.get(`/conversations/${id}/messages`).then((r) => setMessages(r.data));
+        api.get(`/conversations/${id}/messages`)
+            .then((r) => setMessages(r.data))
+            .catch((err) => {
+                if (process.env.NODE_ENV !== "production") {
+                    console.warn("No se pudieron cargar mensajes:", err?.message);
+                }
+            });
         api.get("/conversations").then((r) => {
             const c = r.data.find((x) => x.id === id);
             if (c) {
                 const otherId = c.participants.find((p) => p !== user.id);
                 setOther({ id: otherId, name: c.participant_names?.[otherId] });
             }
-        });
+        }).catch(() => {});
     }, [id, user]);
 
     useEffect(() => {

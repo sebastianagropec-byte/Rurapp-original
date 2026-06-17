@@ -52,8 +52,8 @@ export default function Landing() {
                                         <p className="font-heading text-xl font-semibold text-rurapp-ink">+1.200 productores y expertos</p>
                                     </div>
                                     <div className="flex -space-x-2">
-                                        {["#2D5A27", "#D4A373", "#21431D"].map((c, i) => (
-                                            <div key={i} className="h-10 w-10 rounded-full border-2 border-white" style={{ background: c }} />
+                                        {["#2D5A27", "#D4A373", "#21431D"].map((c) => (
+                                            <div key={c} className="h-10 w-10 rounded-full border-2 border-white" style={{ background: c }} />
                                         ))}
                                     </div>
                                 </div>
@@ -67,11 +67,11 @@ export default function Landing() {
             <section className="bg-rurapp-leaf/40 border-y border-rurapp-edge">
                 <div className="container-rurapp py-12 grid md:grid-cols-3 gap-6">
                     {[
-                        { icon: Sprout, title: "Productores campesinos", desc: "Vende directo, sin intermediarios. Cuenta tu historia y prácticas sostenibles." },
-                        { icon: Stethoscope, title: "Veterinarios y expertos", desc: "Ofrece consultas, agenda visitas y comparte conocimiento con la comunidad." },
-                        { icon: ShoppingBasket, title: "Familias en la ciudad", desc: "Compra fresco, conoce el origen y agenda servicios profesionales." },
+                        { id: "productor", icon: Sprout, title: "Productores campesinos", desc: "Vende directo, sin intermediarios. Cuenta tu historia y prácticas sostenibles." },
+                        { id: "experto", icon: Stethoscope, title: "Veterinarios y expertos", desc: "Ofrece consultas, agenda visitas y comparte conocimiento con la comunidad." },
+                        { id: "cliente", icon: ShoppingBasket, title: "Familias en la ciudad", desc: "Compra fresco, conoce el origen y agenda servicios profesionales." },
                     ].map((p, i) => (
-                        <div key={i} className="card-rurapp animate-fade-up" style={{ animationDelay: `${i * 80}ms` }}>
+                        <div key={p.id} className="card-rurapp animate-fade-up" style={{ animationDelay: `${i * 80}ms` }}>
                             <div className="h-12 w-12 rounded-xl bg-rurapp-forest text-white flex items-center justify-center mb-4">
                                 <p.icon className="h-6 w-6" />
                             </div>
@@ -140,8 +140,8 @@ export default function Landing() {
                         { n: "300+", l: "Veterinarios" },
                         { n: "15K+", l: "Familias urbanas" },
                         { n: "32", l: "Departamentos cubiertos" },
-                    ].map((s, i) => (
-                        <div key={i} className="text-center">
+                    ].map((s) => (
+                        <div key={s.l} className="text-center">
                             <div className="font-heading text-4xl font-bold text-rurapp-forest">{s.n}</div>
                             <div className="text-rurapp-inkSoft mt-1">{s.l}</div>
                         </div>

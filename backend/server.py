@@ -949,6 +949,7 @@ async def ai_chat(
         system_message=system_message,
     ).with_model("anthropic", "claude-sonnet-4-5-20250929")
 
+    reply = ""
     try:
         reply = await chat.send_message(UserMessage(text=payload.message))
     except Exception as e:
