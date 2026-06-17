@@ -173,7 +173,7 @@ class OrderCreateRequest(BaseModel):
     delivery_address: str
     notes: Optional[str] = None
     origin_url: str  # window.location.origin from frontend
-    payment_provider: Optional[Literal["stripe", "wompi", "mercadopago"]] = "stripe"
+    payment_provider: Optional[Literal["stripe", "wompi", "mercadopago", "cod"]] = "stripe"
 
 
 class OrderItem(BaseModel):
@@ -205,7 +205,7 @@ class BookingCreateRequest(BaseModel):
     scheduled_at: str  # ISO datetime
     notes: Optional[str] = None
     origin_url: str
-    payment_provider: Optional[Literal["stripe", "wompi", "mercadopago"]] = "stripe"
+    payment_provider: Optional[Literal["stripe", "wompi", "mercadopago", "cod"]] = "stripe"
 
 
 class Booking(BaseModel):
@@ -348,7 +348,7 @@ class ChatMessage(BaseModel):
 # ===== VERIFICATION =====
 class VerificationSubmit(BaseModel):
     document_type: str  # "cedula_profesional", "tarjeta_profesional", "diploma"
-    document_url: str  # URL or data: URI
+    document_url: Optional[str] = None  # URL or data: URI (optional - can submit text-only first)
     professional_name: str
     professional_id: str  # Numero de matricula/cedula profesional
     institution: Optional[str] = None
@@ -362,7 +362,7 @@ class Verification(BaseModel):
     user_email: str
     user_name: str
     document_type: str
-    document_url: str
+    document_url: Optional[str] = None
     professional_name: str
     professional_id: str
     institution: Optional[str] = None

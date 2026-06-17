@@ -78,7 +78,9 @@ export function ChatRoom() {
                 if (data.type === "message" && data.conversation_id === id) {
                     setMessages((prev) => [...prev, data.message]);
                 }
-            } catch {}
+            } catch (_) {
+                /* ignore malformed message */
+            }
         };
         ws.onerror = () => {};
         return () => ws.close();

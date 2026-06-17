@@ -1,17 +1,19 @@
-import { CreditCard } from "lucide-react";
+import { CreditCard, Truck } from "lucide-react";
 
 const PROVIDERS = [
+    { id: "cod", label: "Pago contraentrega", desc: "Paga en efectivo al recibir tu pedido", flag: "💵" },
     { id: "stripe", label: "Tarjeta internacional (Stripe)", desc: "USD · Visa, MasterCard", flag: "🌎" },
     { id: "wompi", label: "Wompi (Colombia)", desc: "COP · PSE, Bancolombia, tarjetas", flag: "🇨🇴" },
     { id: "mercadopago", label: "MercadoPago", desc: "COP · Tarjetas, Efecty, etc.", flag: "🇦🇷" },
 ];
 
-export default function PaymentProviderSelector({ value, onChange, dataTestPrefix = "pp" }) {
+export default function PaymentProviderSelector({ value, onChange, dataTestPrefix = "pp", allowCod = true }) {
+    const options = allowCod ? PROVIDERS : PROVIDERS.filter((p) => p.id !== "cod");
     return (
         <div className="space-y-2">
             <span className="text-sm font-medium flex items-center gap-1"><CreditCard className="h-4 w-4" /> Método de pago</span>
             <div className="grid gap-2">
-                {PROVIDERS.map((p) => (
+                {options.map((p) => (
                     <button type="button" key={p.id} onClick={() => onChange(p.id)}
                         className={`flex items-center gap-3 p-3 rounded-xl border-2 text-left transition-all ${value === p.id ? "border-rurapp-forest bg-rurapp-leaf/40" : "border-rurapp-edge bg-white hover:bg-rurapp-leaf/20"}`}
                         data-testid={`${dataTestPrefix}-${p.id}`}>

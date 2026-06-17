@@ -65,7 +65,7 @@ export default function Dashboard() {
                 <Link to="/verificacion" className="card-rurapp mb-4 bg-rurapp-leaf border-rurapp-forest flex items-center justify-between" data-testid="goto-verification">
                     <div>
                         <h3 className="font-heading font-semibold text-rurapp-forest">Verifica tu perfil profesional</h3>
-                        <p className="text-rurapp-inkSoft text-sm">Genera más confianza con un sello "Verificado"</p>
+                        <p className="text-rurapp-inkSoft text-sm">Genera más confianza con un sello &ldquo;Verificado&rdquo;</p>
                     </div>
                     <span className="text-rurapp-forest text-2xl">→</span>
                 </Link>

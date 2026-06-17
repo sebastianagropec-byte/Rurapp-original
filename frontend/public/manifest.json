@@ -1,0 +1,49 @@
+{
+  "name": "Rurapp · Del campo a tu mesa",
+  "short_name": "Rurapp",
+  "description": "Marketplace agropecuario y servicios del campo colombiano. Productores, veterinarios y consumidores conectados.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#FDFBF7",
+  "theme_color": "#2D5A27",
+  "categories": ["shopping", "food", "lifestyle"],
+  "lang": "es-CO",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Marketplace",
+      "url": "/marketplace",
+      "description": "Explorar productos del campo"
+    },
+    {
+      "name": "Servicios",
+      "url": "/servicios",
+      "description": "Veterinarios y expertos"
+    },
+    {
+      "name": "Asistente Rura",
+      "url": "/asistente",
+      "description": "Asistente IA del agro"
+    }
+  ]
+}

@@ -1,19 +1,23 @@
 import { useEffect, useState, useRef } from "react";
 import { useSearchParams, Link } from "react-router-dom";
 import { api } from "../lib/api";
-import { CheckCircle2, AlertTriangle, Loader2 } from "lucide-react";
+import { CheckCircle2, AlertTriangle, Loader2, Truck } from "lucide-react";
 import { useCart } from "../lib/cart";
 
 export default function PaymentSuccess() {
     const [params] = useSearchParams();
     const sessionId = params.get("session_id");
     const isMembership = params.get("membership") === "1";
-    const [status, setStatus] = useState("polling"); // polling | paid | expired | error
+    const isCod = params.get("cod") === "1";
+    const codOrderId = params.get("order_id");
+    const codBookingId = params.get("booking_id");
+    const [status, setStatus] = useState(isCod ? "cod" : "polling");
     const [tx, setTx] = useState(null);
     const attempts = useRef(0);
     const { clear } = useCart();
 
     useEffect(() => {
+        if (isCod) { clear(); return; }
         if (!sessionId) return;
         clear();
         let timer;
@@ -33,7 +37,7 @@ export default function PaymentSuccess() {
         poll();
         return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [sessionId]);
+    }, [sessionId, isCod]);
 
     return (
         <div className="container-rurapp py-16 max-w-xl text-center" data-testid="payment-success">
@@ -42,6 +46,25 @@ export default function PaymentSuccess() {
                     <Loader2 className="h-12 w-12 mx-auto text-rurapp-forest animate-spin" />
                     <h1 className="font-heading text-2xl font-bold mt-4">Confirmando tu pago…</h1>
                     <p className="text-rurapp-inkSoft mt-2">No cierres esta ventana</p>
+                </>
+            )}
+            {status === "cod" && (
+                <>
+                    <div className="inline-flex h-16 w-16 rounded-full bg-rurapp-leaf items-center justify-center">
+                        <Truck className="h-8 w-8 text-rurapp-forest" />
+                    </div>
+                    <h1 className="font-heading text-3xl font-bold mt-4" data-testid="cod-success-title">¡Pedido registrado!</h1>
+                    <p className="text-rurapp-inkSoft mt-2">
+                        {codBookingId
+                            ? "Tu cita fue agendada. Pagarás al experto cuando recibas el servicio."
+                            : "El productor preparará tu pedido. Pagarás en efectivo al recibirlo."}
+                    </p>
+                    <div className="mt-6 flex justify-center gap-3 flex-wrap">
+                        <Link to={codBookingId ? "/mis-citas" : "/mis-pedidos"} className="btn-primary" data-testid="cod-success-link">
+                            {codBookingId ? "Ver mis citas" : "Ver mis pedidos"}
+                        </Link>
+                        <Link to="/" className="btn-outline">Inicio</Link>
+                    </div>
                 </>
             )}
             {status === "paid" && (

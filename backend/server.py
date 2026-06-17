@@ -42,6 +42,8 @@ from email_service import (
     send_order_confirmation, send_booking_confirmation, send_membership_receipt,
 )
 from payments_co import wompi, mercadopago
+from push_service import push_to_user
+from webhook_security import verify_wompi_signature, verify_mercadopago_signature
 from routes_extra import register_all as register_extra_routes, co_provider_checkout
 
 
@@ -423,6 +425,40 @@ async def create_order(
     success_url = f"{payload.origin_url}/payment/success?session_id={{CHECKOUT_SESSION_ID}}&order_id={order.id}"
     cancel_url = f"{payload.origin_url}/cart"
 
+    if provider == "cod":
+        # Pago contraentrega: confirm immediately, no gateway involved
+        await db.orders.update_one(
+            {"id": order.id}, {"$set": {"status": "preparing", "payment_method": "cod"}}
+        )
+        # Decrement stock right away (customer committed to receive)
+        for item in items_out:
+            await db.products.update_one(
+                {"id": item.product_id}, {"$inc": {"stock": -item.quantity}},
+            )
+        # Send confirmation email + push to participants
+        try:
+            await send_order_confirmation(
+                to_email=user["email"], customer_name=user["full_name"],
+                order_id=order.id, total=total, items_count=len(items_out),
+            )
+        except Exception as e:
+            logging.warning("cod order email error: %s", e)
+        try:
+            producer_ids = list({it.producer_id for it in items_out})
+            for pid in producer_ids:
+                await push_to_user(db, pid, "🧺 Nuevo pedido (contraentrega)",
+                                   f"Pedido de {user['full_name']} · pago al recibir", "/pedidos-recibidos")
+            await push_to_user(db, user_id, "✅ Pedido registrado",
+                               f"Pagas al recibir: ${total:,.0f}", "/mis-pedidos")
+        except Exception as e:
+            logging.warning("cod order push error: %s", e)
+        return {
+            "order_id": order.id,
+            "checkout_url": f"{payload.origin_url}/payment/success?cod=1&order_id={order.id}",
+            "session_id": f"cod_{order.id}",
+            "provider": "cod",
+        }
+
     if provider == "stripe":
         stripe = _build_stripe(request)
         session = await stripe.create_checkout_session(CheckoutSessionRequest(
@@ -511,6 +547,33 @@ async def create_booking(
     provider = payload.payment_provider or "stripe"
     success_url = f"{payload.origin_url}/payment/success?session_id={{CHECKOUT_SESSION_ID}}&booking_id={booking.id}"
     cancel_url = f"{payload.origin_url}/servicio/{service['id']}"
+
+    if provider == "cod":
+        # Pago contraentrega: confirm booking immediately
+        await db.bookings.update_one(
+            {"id": booking.id}, {"$set": {"status": "confirmed", "payment_method": "cod"}}
+        )
+        try:
+            await send_booking_confirmation(
+                to_email=user["email"], customer_name=user["full_name"],
+                booking_id=booking.id, service_title=booking.service_title,
+                expert_name=booking.expert_name, scheduled_at=booking.scheduled_at,
+            )
+        except Exception as e:
+            logging.warning("cod booking email error: %s", e)
+        try:
+            await push_to_user(db, booking.expert_id, "📅 Nueva cita (pago al servicio)",
+                               f"{user['full_name']} agendó: {booking.service_title}", "/citas-recibidas")
+            await push_to_user(db, user_id, "✅ Cita confirmada",
+                               f"{booking.service_title} con {booking.expert_name}", "/mis-citas")
+        except Exception as e:
+            logging.warning("cod booking push error: %s", e)
+        return {
+            "booking_id": booking.id,
+            "checkout_url": f"{payload.origin_url}/payment/success?cod=1&booking_id={booking.id}",
+            "session_id": f"cod_{booking.id}",
+            "provider": "cod",
+        }
 
     if provider == "stripe":
         stripe = _build_stripe(request)
@@ -701,6 +764,15 @@ async def _process_paid_transaction(tx: dict):
                 )
             except Exception as e:
                 logging.warning("order email error: %s", e)
+            # Push to producers receiving the order
+            try:
+                producer_ids = list({it["producer_id"] for it in order["items"]})
+                for pid in producer_ids:
+                    await push_to_user(db, pid, "🧺 Nuevo pedido", f"Recibiste un pedido de {order['customer_name']}", "/pedidos-recibidos")
+                # And to customer
+                await push_to_user(db, order["customer_id"], "✅ Pedido confirmado", f"Tu pedido por ${order['total']:,.0f} fue confirmado", "/mis-pedidos")
+            except Exception as e:
+                logging.warning("order push error: %s", e)
 
     elif tx["type"] == "booking":
         booking = await db.bookings.find_one({"id": tx["reference_id"]}, {"_id": 0})
@@ -717,6 +789,11 @@ async def _process_paid_transaction(tx: dict):
                 )
             except Exception as e:
                 logging.warning("booking email error: %s", e)
+            try:
+                await push_to_user(db, booking["expert_id"], "📅 Nueva cita", f"{booking['customer_name']} agendó: {booking['service_title']}", "/citas-recibidas")
+                await push_to_user(db, booking["customer_id"], "✅ Cita confirmada", f"{booking['service_title']} con {booking['expert_name']}", "/mis-citas")
+            except Exception as e:
+                logging.warning("booking push error: %s", e)
 
     elif tx["type"] == "membership":
         plan = MEMBERSHIP_PLANS.get(tx["reference_id"])
@@ -924,10 +1001,16 @@ register_extra_routes(app, db)
 # Webhooks for COL providers
 @app.post("/api/webhook/wompi")
 async def wompi_webhook(request: Request):
+    body = await request.body()
+    sig_header = request.headers.get("X-Event-Checksum")
+    valid, reason = verify_wompi_signature(body, sig_header)
+    if not valid:
+        logging.warning("Wompi webhook rejected: %s", reason)
+        raise HTTPException(status_code=401, detail=f"Invalid signature: {reason}")
     try:
-        body = await request.json()
-        # Wompi sends: event, data.transaction.{id, status, reference}
-        data = body.get("data", {}).get("transaction", {})
+        import json as _json
+        body_json = _json.loads(body.decode("utf-8")) if body else {}
+        data = body_json.get("data", {}).get("transaction", {})
         ref = data.get("reference")
         wstatus = (data.get("status") or "").upper()
         if ref and wstatus == "APPROVED":
@@ -942,14 +1025,26 @@ async def wompi_webhook(request: Request):
                 await _process_paid_transaction(tx)
     except Exception as e:
         logging.warning("Wompi webhook error: %s", e)
-    return {"received": True}
+    return {"received": True, "verified": valid}
 
 
 @app.post("/api/webhook/mercadopago")
 async def mp_webhook(request: Request):
+    body = await request.body()
+    sig_header = request.headers.get("x-signature")
+    req_id = request.headers.get("x-request-id")
+    body_json = {}
     try:
-        body = await request.json()
-        data_id = body.get("data", {}).get("id") or body.get("resource")
+        import json as _json
+        body_json = _json.loads(body.decode("utf-8")) if body else {}
+    except Exception:
+        pass
+    data_id = (body_json.get("data") or {}).get("id") or body_json.get("resource") or request.query_params.get("id")
+    valid, reason = verify_mercadopago_signature(req_id, str(data_id) if data_id else None, sig_header)
+    if not valid:
+        logging.warning("MP webhook rejected: %s", reason)
+        raise HTTPException(status_code=401, detail=f"Invalid signature: {reason}")
+    try:
         if data_id:
             tx = await db.payment_transactions.find_one(
                 {"session_id": str(data_id)}, {"_id": 0}
@@ -962,7 +1057,7 @@ async def mp_webhook(request: Request):
                 await _process_paid_transaction(tx)
     except Exception as e:
         logging.warning("MP webhook error: %s", e)
-    return {"received": True}
+    return {"received": True, "verified": valid}
 
 app.add_middleware(
     CORSMiddleware,
@@ -982,3 +1077,18 @@ logger = logging.getLogger(__name__)
 @app.on_event("shutdown")
 async def shutdown_db_client():
     client.close()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_credentials=True,
+    allow_origins=os.environ.get("CORS_ORIGINS", "*").split(","),
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
+logger = logging.getLogger(__name__)
+

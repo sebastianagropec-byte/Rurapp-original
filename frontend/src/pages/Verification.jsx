@@ -63,7 +63,7 @@ export default function Verification() {
                 </div>
                 <div>
                     <h1 className="font-heading text-3xl font-bold">Verificación profesional</h1>
-                    <p className="text-rurapp-inkSoft">Genera confianza con un sello "Verificado"</p>
+                    <p className="text-rurapp-inkSoft">Genera confianza con un sello &ldquo;Verificado&rdquo;</p>
                 </div>
             </div>
 

@@ -6,6 +6,7 @@ import {
     User, MessageCircle, LogOut, Menu, X, MapPin
 } from "lucide-react";
 import { useState } from "react";
+import { InstallBanner, OfflineBanner } from "./InstallBanner";
 
 export function TopBar() {
     const { user, logout } = useAuth();
@@ -120,9 +121,11 @@ export function BottomNav() {
 export function Layout({ children }) {
     return (
         <div className="min-h-screen flex flex-col bg-rurapp-bone">
+            <OfflineBanner />
             <TopBar />
             <main className="flex-1 pb-24 md:pb-12">{children}</main>
             <BottomNav />
+            <InstallBanner />
             <footer className="hidden md:block border-t border-rurapp-edge bg-white">
                 <div className="container-rurapp py-8 text-sm text-rurapp-inkMuted flex flex-wrap items-center justify-between gap-4">
                     <div className="flex items-center gap-2">

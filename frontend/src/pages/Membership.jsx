@@ -86,7 +86,7 @@ export default function Membership() {
             </div>
             {(user?.role === "productor" || user?.role === "veterinario") && (
                 <div className="card-rurapp mt-6 max-w-md mx-auto">
-                    <PaymentProviderSelector value={provider} onChange={setProvider} dataTestPrefix="mem-pp" />
+                    <PaymentProviderSelector value={provider} onChange={setProvider} dataTestPrefix="mem-pp" allowCod={false} />
                 </div>
             )}
         </div>

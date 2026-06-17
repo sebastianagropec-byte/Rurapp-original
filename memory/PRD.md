@@ -54,6 +54,20 @@ Plataforma web AgTech para Colombia que conecta el campo y la ciudad: productore
 - ✅ Usuario admin demo: `admin@rurapp.co / rurapp123`
 - ✅ Test coverage: 92/93 backend tests passing (98.9%) en iteration_2
 
+## Phase 3 (Feb 2026)
+- ✅ **PWA + modo offline**: manifest.json completo, service-worker.js con estrategias (network-first APIs, cache-first tiles/fonts/static), icon-192.png, icon-512.png, icon.svg. Banner "Instalar Rurapp" con `beforeinstallprompt`. Banner "Sin conexión". Pantalla cacheada al perder conexión.
+- ✅ **OCR real con Claude Sonnet 4.5 Vision** (`ocr_service.py`): el OCR descarga la imagen del documento, extrae el texto literal y compara contra los datos auto-reportados (nombre/matrícula/institución). Si match alto y recomendación `approve`, fast-track a `ai_approved`.
+- ✅ **Notificaciones push FCM stub** (`push_service.py`) con MOCKED fallback. Endpoints `/api/push/config`, `/api/push/register-token`, `/api/push/test`. Disparos automáticos en: nuevo pedido (productor + cliente), nueva cita (experto + cliente), mensaje de chat offline. Service Worker maneja eventos `push` y `notificationclick`.
+- ✅ **Verificación de firmas de webhooks** (`webhook_security.py`): Wompi (`X-Event-Checksum` con HMAC SHA-256 sobre `properties + timestamp + secret`), MercadoPago (`x-signature` con `id;request-id;ts;` HMAC). Skip verification cuando el secret no está seteado (MOCKED).
+- ✅ **Pago Contraentrega (COD)**: nueva opción en `PaymentProviderSelector` (default por accesibilidad). Backend confirma pedido/cita inmediatamente sin gateway, decrementa stock y envía notificaciones. PaymentSuccess detecta `cod=1` y muestra mensaje específico ("Pagarás al recibir").
+- ✅ **Code cleanup**: `shutdown_db_client` duplicado eliminado, f-strings sin placeholders corregidas, empty catch en Chat.jsx con comentario, quotes JSX escapadas en Dashboard/Verification, base de datos limpia (sin residuos de testing). **Cero errores en consola** en navegación de 5 rutas principales.
+
+## Mocked en producción (hasta agregar keys)
+- `WOMPI_PUBLIC_KEY`, `WOMPI_INTEGRITY_SECRET`, `WOMPI_EVENTS_SECRET`
+- `MERCADOPAGO_ACCESS_TOKEN`, `MERCADOPAGO_WEBHOOK_SECRET`
+- `SENDGRID_API_KEY`, `SENDGRID_FROM_EMAIL`
+- `FIREBASE_SERVICE_ACCOUNT_JSON`, `FIREBASE_VAPID_PUBLIC_KEY`
+
 ## Test credentials
 - `campesino@rurapp.co` / `rurapp123` — Productor (membresía activa, verificado)
 - `vet@rurapp.co` / `rurapp123` — Veterinario (membresía activa, verificado)

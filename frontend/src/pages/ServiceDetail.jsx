@@ -14,7 +14,7 @@ export default function ServiceDetail() {
     const [reviews, setReviews] = useState([]);
     const [scheduledAt, setScheduledAt] = useState("");
     const [notes, setNotes] = useState("");
-    const [provider, setProvider] = useState("stripe");
+    const [provider, setProvider] = useState("cod");
     const [loading, setLoading] = useState(true);
     const [booking, setBooking] = useState(false);
     const [err, setErr] = useState("");

@@ -16,6 +16,9 @@ from email_service import send_chat_notification
 from payments_co import wompi, mercadopago
 from ws_manager import manager
 from emergentintegrations.llm.chat import LlmChat, UserMessage
+from ocr_service import ocr_verify_document
+from push_service import push_to_user, push_service
+from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 extra_router = APIRouter(prefix="/api")
@@ -121,7 +124,7 @@ def register_chat_routes(db):
             "message": msg.model_dump(),
         })
 
-        # If recipient offline, queue email notification
+        # If recipient offline, queue email + push notification
         if not delivered:
             other = await _get_user(db, other_id)
             if other.get("email"):
@@ -135,6 +138,15 @@ def register_chat_routes(db):
                     )
                 except Exception as e:
                     logger.warning("Chat email notification failed: %s", e)
+            try:
+                await push_to_user(
+                    db, other_id,
+                    title=f"💬 {me['full_name']}",
+                    body=payload.content[:120],
+                    link=f"/chat/{payload.conversation_id}",
+                )
+            except Exception as e:
+                logger.warning("Chat push notification failed: %s", e)
 
         return msg
 
@@ -171,9 +183,25 @@ def register_verification_routes(db):
         if user["role"] != "veterinario":
             raise HTTPException(status_code=403, detail="Solo expertos pueden solicitar verificación")
 
-        # Pre-analysis with Claude
         ai_analysis = ""
         ai_recommendation = "review"
+
+        # Step 1: If a document image URL is provided, run Claude Vision OCR
+        ocr_result = None
+        if payload.document_url:
+            try:
+                ocr_result = await ocr_verify_document(
+                    document_url=payload.document_url,
+                    expected_name=payload.professional_name,
+                    expected_id=payload.professional_id,
+                    expected_institution=payload.institution,
+                    document_type=payload.document_type,
+                )
+            except Exception as e:
+                logger.warning("OCR step failed: %s", e)
+                ocr_result = None
+
+        # Step 2: Coherence + final recommendation analysis with Claude
         try:
             session_id = gen_id()
             chat = LlmChat(
@@ -181,13 +209,24 @@ def register_verification_routes(db):
                 session_id=session_id,
                 system_message=(
                     "Eres un asistente de verificación de profesionales del agro en Colombia. "
-                    "Te darán datos auto-reportados por un veterinario o experto. "
-                    "Evalúa la coherencia de la información (no validas autenticidad de documentos, "
-                    "solo coherencia y completitud). Responde en este formato exacto:\n"
+                    "Recibes datos auto-reportados por un veterinario o experto y, si aplica, "
+                    "el resultado de OCR sobre su documento. Evalúa coherencia y completitud "
+                    "(no autenticidad). Responde EXACTAMENTE así:\n"
                     "RECOMENDACION: [approve|review|reject]\n"
-                    "RAZON: [breve explicación en 1-2 frases]"
+                    "RAZON: [breve explicación 1-2 frases]"
                 ),
             ).with_model("anthropic", "claude-sonnet-4-5-20250929")
+            ocr_summary = ""
+            if ocr_result:
+                ocr_summary = (
+                    f"\n\nResultado OCR:\n"
+                    f"- Texto extraído: {(ocr_result.get('extracted_text') or '')[:300]}\n"
+                    f"- Coincide nombre: {ocr_result['matches'].get('name')}\n"
+                    f"- Coincide número: {ocr_result['matches'].get('id')}\n"
+                    f"- Coincide institución: {ocr_result['matches'].get('institution')}\n"
+                    f"- Recomendación OCR: {ocr_result.get('recommendation')}\n"
+                    f"- Confianza OCR: {ocr_result.get('confidence')}"
+                )
             prompt = (
                 f"Nombre profesional: {payload.professional_name}\n"
                 f"Tipo de documento: {payload.document_type}\n"
@@ -195,7 +234,8 @@ def register_verification_routes(db):
                 f"Institución: {payload.institution or '(no provista)'}\n"
                 f"Notas: {payload.notes or '(ninguna)'}\n"
                 f"Especialidad declarada: {user.get('specialty') or '(ninguna)'}\n"
-                f"URL/data documento: {'(adjunta)' if payload.document_url else '(sin documento)'}"
+                f"Documento adjunto: {'sí' if payload.document_url else 'no'}"
+                f"{ocr_summary}"
             )
             reply = await chat.send_message(UserMessage(text=prompt))
             ai_analysis = reply
@@ -210,8 +250,12 @@ def register_verification_routes(db):
             ai_analysis = f"AI analysis no disponible: {str(e)[:120]}"
             ai_recommendation = "review"
 
+        # Override: if OCR has high confidence and matches everything, fast-track
+        if ocr_result and ocr_result.get("confidence", 0) >= 0.66 and ocr_result.get("recommendation") == "approve":
+            ai_recommendation = "approve"
+
         status = "ai_approved" if ai_recommendation == "approve" else "pending"
-        ver = Verification(
+        ver_data = Verification(
             user_id=user_id,
             user_email=user["email"],
             user_name=user["full_name"],
@@ -224,12 +268,20 @@ def register_verification_routes(db):
             ai_analysis=ai_analysis,
             ai_recommendation=ai_recommendation,
             status=status,
-        )
-        await db.verifications.insert_one(ver.model_dump())
+        ).model_dump()
+        # Attach OCR detail in metadata-like field
+        if ocr_result:
+            ver_data["ai_analysis"] = (
+                f"[OCR] {ocr_result.get('notes', '')}\n"
+                f"Coincidencias: {ocr_result['matches']}\n"
+                f"Confianza: {ocr_result.get('confidence')}\n\n"
+                f"[Análisis general]\n{ai_analysis}"
+            )
+        await db.verifications.insert_one(ver_data)
         await db.users.update_one(
             {"id": user_id}, {"$set": {"verification_status": "pending"}}
         )
-        return ver
+        return Verification(**ver_data)
 
     @extra_router.get("/verifications/mine", response_model=Optional[Verification])
     async def my_verification(user_id: str = Depends(get_current_user_id)):
@@ -338,4 +390,58 @@ def register_all(app, db):
     register_chat_routes(db)
     register_verification_routes(db)
     register_admin_routes(db)
+    register_push_routes(db)
     app.include_router(extra_router)
+
+
+# ===========================
+# PUSH NOTIFICATIONS (FCM)
+# ===========================
+class PushTokenRegister(BaseModel):
+    token: str
+    platform: str = "web"  # web | android | ios
+
+
+def register_push_routes(db):
+    @extra_router.get("/push/config")
+    async def push_config():
+        """Returns frontend config for FCM (VAPID public key) or null if disabled."""
+        return {
+            "enabled": push_service().enabled,
+            "vapid_public_key": push_service().vapid_public_key or None,
+        }
+
+    @extra_router.post("/push/register-token")
+    async def register_token(
+        payload: PushTokenRegister,
+        user_id: str = Depends(get_current_user_id),
+    ):
+        if not payload.token or len(payload.token) < 16:
+            raise HTTPException(status_code=400, detail="Token inválido")
+        await db.users.update_one(
+            {"id": user_id},
+            {"$addToSet": {"fcm_tokens": payload.token}},
+        )
+        return {"ok": True, "mocked": not push_service().enabled}
+
+    @extra_router.post("/push/unregister-token")
+    async def unregister_token(
+        payload: PushTokenRegister,
+        user_id: str = Depends(get_current_user_id),
+    ):
+        await db.users.update_one(
+            {"id": user_id},
+            {"$pull": {"fcm_tokens": payload.token}},
+        )
+        return {"ok": True}
+
+    @extra_router.post("/push/test")
+    async def push_test(user_id: str = Depends(get_current_user_id)):
+        """Send a test push to current user."""
+        result = await push_to_user(
+            db, user_id,
+            title="🌱 Rurapp",
+            body="¡Notificaciones activadas correctamente!",
+            link="/dashboard",
+        )
+        return result

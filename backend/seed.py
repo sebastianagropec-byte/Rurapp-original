@@ -220,9 +220,9 @@ async def seed():
         })
 
     print("✅ Seed completed:")
-    print(f"  Producer: campesino@rurapp.co / rurapp123")
-    print(f"  Vet:      vet@rurapp.co / rurapp123")
-    print(f"  Cliente:  cliente@rurapp.co / rurapp123")
+    print("  Producer: campesino@rurapp.co / rurapp123")
+    print("  Vet:      vet@rurapp.co / rurapp123")
+    print("  Cliente:  cliente@rurapp.co / rurapp123")
     print(f"  Products: {len(products)} | Services: {len(services)} | Articles: {len(articles)}")
 
 

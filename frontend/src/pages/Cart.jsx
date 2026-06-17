@@ -12,7 +12,7 @@ export default function Cart() {
     const navigate = useNavigate();
     const [address, setAddress] = useState("");
     const [notes, setNotes] = useState("");
-    const [provider, setProvider] = useState("stripe");
+    const [provider, setProvider] = useState("cod");
     const [loading, setLoading] = useState(false);
     const [err, setErr] = useState("");
 
