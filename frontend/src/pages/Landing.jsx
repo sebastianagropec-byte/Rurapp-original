@@ -23,7 +23,7 @@ export default function Landing() {
                     <div className="lg:col-span-6 animate-fade-up">
                         <span className="chip mb-4"><Leaf className="h-3 w-3 mr-1" /> AgTech para Colombia</span>
                         <h1 className="font-heading text-4xl sm:text-5xl lg:text-6xl font-bold text-rurapp-ink leading-[1.05]">
-                            Del campo a tu mesa, <span className="text-rurapp-forest">sin intermediarios</span>.
+                            Conectando el <span className="text-rurapp-forest">campo y la ciudad</span>.
                         </h1>
                         <p className="mt-5 text-lg text-rurapp-inkSoft max-w-xl">
                             Rurapp conecta a campesinos, veterinarios y consumidores urbanos. Compra productos frescos, agenda asesorías técnicas y apoya el campo colombiano con una app sencilla.

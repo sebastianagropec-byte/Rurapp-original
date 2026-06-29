@@ -50,6 +50,10 @@ class UserPublic(BaseModel):
     verification_status: Optional[str] = "none"  # none, pending, approved, rejected
     membership_active: bool = False
     membership_expires_at: Optional[str] = None
+    membership_plan: Optional[str] = None  # "basico" | "pro"
+    on_trial: bool = False
+    trial_used: bool = False
+    trial_ends_at: Optional[str] = None
     rating_avg: float = 0.0
     rating_count: int = 0
     lat: Optional[float] = None

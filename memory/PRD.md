@@ -97,3 +97,13 @@ Plataforma web AgTech para Colombia que conecta el campo y la ciudad: productore
 ## Known external limitations
 - El asistente AI puede fallar tras múltiples llamadas si se excede el presupuesto del EMERGENT_LLM_KEY (manejado con error 503 amigable).
 - El polling de status de Stripe usa fallback al estado en BD si la API de Stripe falla, gracias al webhook `/api/webhook/stripe`.
+
+## 2026-06-29 · Update
+- Replaced PWA icons (icon-192.png, icon-512.png, icon.svg) and brand header logo with new asset uploaded by user (Screenshot_20260629_104728.jpg).
+- Updated slogan globally to "Conectando el Campo y la Ciudad" (Layout, Landing H1, manifest, index.html title/description).
+- Added one-time 7-day free trial for productores/veterinarios:
+  - Backend: `POST /api/memberships/start-trial`, `GET /api/memberships/status`, auto-downgrade on expiry via `get_user_doc()` helper.
+  - User model: `on_trial`, `trial_used`, `trial_ends_at`, `membership_plan` fields.
+  - Reminder flag fires when on_trial=True and days_left <= 2.
+  - Frontend: Membership.jsx shows "Empezar 7 días gratis" button + reminder banner.
+- Wompi remains in TEST mode (sandbox.wompi.co), mocked when keys empty. Fixed double-`?` bug in mocked redirect URL.

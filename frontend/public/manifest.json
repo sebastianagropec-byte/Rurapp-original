@@ -1,7 +1,7 @@
 {
-  "name": "Rurapp · Del campo a tu mesa",
+  "name": "Rurapp · Conectando el Campo y la Ciudad",
   "short_name": "Rurapp",
-  "description": "Marketplace agropecuario y servicios del campo colombiano. Productores, veterinarios y consumidores conectados.",
+  "description": "Conectando el campo y la ciudad. Marketplace agropecuario y servicios profesionales del campo colombiano. Productores, veterinarios y consumidores conectados.",
   "start_url": "/",
   "display": "standalone",
   "orientation": "portrait",

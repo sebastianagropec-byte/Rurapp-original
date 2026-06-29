@@ -18,12 +18,12 @@ export function TopBar() {
         <header className="sticky top-0 z-40 bg-rurapp-bone/95 backdrop-blur border-b border-rurapp-edge">
             <div className="container-rurapp flex items-center justify-between py-3">
                 <Link to="/" className="flex items-center gap-2" data-testid="brand-logo">
-                    <div className="h-9 w-9 rounded-xl bg-rurapp-forest flex items-center justify-center">
-                        <Sprout className="h-5 w-5 text-white" />
+                    <div className="h-10 w-10 rounded-xl bg-rurapp-bone border border-rurapp-edge flex items-center justify-center overflow-hidden">
+                        <img src="/icon-192.png" alt="Rurapp" className="h-full w-full object-contain" />
                     </div>
                     <div className="leading-tight">
                         <div className="font-heading text-xl font-bold text-rurapp-forest">Rurapp</div>
-                        <div className="text-[10px] uppercase tracking-[0.18em] text-rurapp-inkMuted">Del campo a tu mesa</div>
+                        <div className="text-[10px] uppercase tracking-[0.18em] text-rurapp-inkMuted">Conectando el Campo y la Ciudad</div>
                     </div>
                 </Link>
 

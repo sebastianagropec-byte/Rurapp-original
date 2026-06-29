@@ -43,7 +43,8 @@ class WompiService:
         if not self.enabled:
             # MOCKED checkout: returns a fake URL that immediately redirects to success
             mock_id = f"mock_wompi_{uuid.uuid4().hex[:16]}"
-            mock_url = f"{redirect_url}?session_id={mock_id}&mocked=wompi"
+            sep = "&" if "?" in redirect_url else "?"
+            mock_url = f"{redirect_url}{sep}session_id={mock_id}&mocked=wompi"
             logger.info("[MOCKED WOMPI] %s amount=%s ref=%s", mock_id, amount_cop, reference)
             return {
                 "session_id": mock_id,

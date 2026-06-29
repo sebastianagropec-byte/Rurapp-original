@@ -10,7 +10,7 @@ import os
 import logging
 from pathlib import Path
 from typing import List, Optional
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 from models import (
     UserCreate, UserLogin, UserPublic, UserUpdate, TokenResponse,
@@ -78,6 +78,23 @@ async def get_user_doc(user_id: str) -> dict:
     user = await db.users.find_one({"id": user_id}, {"_id": 0, "password_hash": 0})
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    # Auto-downgrade expired memberships / trials
+    expires_at = user.get("membership_expires_at")
+    if user.get("membership_active") and expires_at:
+        try:
+            exp = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+            if exp < datetime.now(timezone.utc):
+                await db.users.update_one(
+                    {"id": user_id},
+                    {"$set": {
+                        "membership_active": False,
+                        "on_trial": False,
+                    }},
+                )
+                user["membership_active"] = False
+                user["on_trial"] = False
+        except (ValueError, TypeError):
+            pass
     return user
 
 
@@ -133,6 +150,10 @@ async def register(payload: UserCreate):
         "verification_status": "none",
         "membership_active": payload.role == "cliente",  # clients don't need membership
         "membership_expires_at": None,
+        "membership_plan": None,
+        "on_trial": False,
+        "trial_used": False,
+        "trial_ends_at": None,
         "rating_avg": 0.0,
         "rating_count": 0,
         "is_admin": False,
@@ -629,7 +650,79 @@ async def received_bookings(user_id: str = Depends(get_current_user_id)):
 # =========================
 @api_router.get("/memberships/plans")
 async def list_plans():
-    return [{"id": k, **v} for k, v in MEMBERSHIP_PLANS.items()]
+    return [{"id": k, **v, "trial_days": 7} for k, v in MEMBERSHIP_PLANS.items()]
+
+
+@api_router.get("/memberships/status")
+async def membership_status(user_id: str = Depends(get_current_user_id)):
+    """Returns trial / membership status for current user. Computes days_left and reminder flag."""
+    user = await get_user_doc(user_id)
+    expires_at = user.get("membership_expires_at")
+    days_left = None
+    reminder = False
+    if expires_at:
+        try:
+            exp = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+            delta = exp - datetime.now(timezone.utc)
+            days_left = max(0, delta.days + (1 if delta.seconds > 0 else 0))
+            # Reminder when on trial and 2 days or less remaining
+            reminder = bool(user.get("on_trial")) and days_left <= 2 and days_left >= 0
+        except (ValueError, TypeError):
+            pass
+    return {
+        "membership_active": bool(user.get("membership_active")),
+        "membership_plan": user.get("membership_plan"),
+        "on_trial": bool(user.get("on_trial")),
+        "trial_used": bool(user.get("trial_used")),
+        "trial_ends_at": user.get("trial_ends_at"),
+        "membership_expires_at": expires_at,
+        "days_left": days_left,
+        "reminder": reminder,
+    }
+
+
+@api_router.post("/memberships/start-trial")
+async def start_trial(
+    payload: MembershipCheckoutRequest,
+    user_id: str = Depends(get_current_user_id),
+):
+    """Start a one-time 7-day free trial for productor/veterinario users.
+
+    No payment is required. Trial can only be used ONCE per user.
+    """
+    user = await require_role(user_id, ["productor", "veterinario"])
+    if payload.plan_id not in MEMBERSHIP_PLANS:
+        raise HTTPException(status_code=400, detail="Plan inválido")
+    if user.get("trial_used"):
+        raise HTTPException(
+            status_code=400,
+            detail="Ya usaste tu prueba gratis. Elige un plan pagado para continuar.",
+        )
+    if user.get("membership_active"):
+        raise HTTPException(
+            status_code=400,
+            detail="Ya tienes una membresía activa.",
+        )
+    now = datetime.now(timezone.utc)
+    expires = (now + timedelta(days=7)).isoformat()
+    await db.users.update_one(
+        {"id": user_id},
+        {"$set": {
+            "membership_active": True,
+            "membership_plan": payload.plan_id,
+            "membership_expires_at": expires,
+            "on_trial": True,
+            "trial_used": True,
+            "trial_ends_at": expires,
+        }},
+    )
+    return {
+        "ok": True,
+        "trial_ends_at": expires,
+        "membership_expires_at": expires,
+        "plan_id": payload.plan_id,
+        "days": 7,
+    }
 
 
 @api_router.post("/memberships/checkout")
@@ -805,7 +898,9 @@ async def _process_paid_transaction(tx: dict):
                 {"id": tx["user_id"]},
                 {"$set": {
                     "membership_active": True,
+                    "membership_plan": tx["reference_id"],
                     "membership_expires_at": expires,
+                    "on_trial": False,
                 }},
             )
             try:
