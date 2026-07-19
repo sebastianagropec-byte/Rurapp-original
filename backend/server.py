@@ -153,14 +153,14 @@ async def upload_image(
     if len(raw) < 100:
         raise HTTPException(status_code=400, detail="Archivo vacío o inválido")
 
-    # Resize to max 1200px on longest side to keep data URL small
+    # Resize to max 800px on longest side to keep data URL small (protects Mongo BSON size)
     import base64
     import io
     from PIL import Image, ImageOps
     try:
         img = Image.open(io.BytesIO(raw))
         img = ImageOps.exif_transpose(img)  # respect phone orientation
-        img.thumbnail((1200, 1200), Image.LANCZOS)
+        img.thumbnail((800, 800), Image.LANCZOS)
         buf = io.BytesIO()
         # Always output JPEG (smaller) unless PNG has alpha
         if img.mode in ("RGBA", "LA"):
@@ -169,7 +169,7 @@ async def upload_image(
         else:
             if img.mode != "RGB":
                 img = img.convert("RGB")
-            img.save(buf, format="JPEG", quality=82, optimize=True)
+            img.save(buf, format="JPEG", quality=78, optimize=True, progressive=True)
             mime = "image/jpeg"
         b64 = base64.b64encode(buf.getvalue()).decode("ascii")
         data_url = f"data:{mime};base64,{b64}"
