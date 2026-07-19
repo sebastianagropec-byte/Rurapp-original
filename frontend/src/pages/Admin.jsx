@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
-import { ShieldCheck, CheckCircle2, XCircle, Sparkles, ExternalLink } from "lucide-react";
+import { ShieldCheck, CheckCircle2, XCircle, Sparkles, ExternalLink, Ticket, Trash2, Copy, Plus } from "lucide-react";
 
 export default function AdminPanel() {
     const { user } = useAuth();
@@ -123,6 +123,157 @@ export default function AdminPanel() {
                     ))}
                 </div>
             )}
+
+            <DiscountCodesAdmin />
         </div>
     );
 }
+
+
+function DiscountCodesAdmin() {
+    const [codes, setCodes] = useState([]);
+    const [form, setForm] = useState({ code: "", months: 12, max_uses: 1, plan_id: "", notes: "", expires_at: "" });
+    const [creating, setCreating] = useState(false);
+    const [err, setErr] = useState("");
+
+    const load = () => api.get("/admin/discount-codes").then((r) => setCodes(r.data));
+    useEffect(() => { load(); }, []);
+
+    const onCreate = async (e) => {
+        e.preventDefault();
+        setErr(""); setCreating(true);
+        try {
+            const payload = {
+                months: parseInt(form.months) || 1,
+                max_uses: parseInt(form.max_uses) || 1,
+            };
+            if (form.code.trim()) payload.code = form.code.trim().toUpperCase();
+            if (form.plan_id) payload.plan_id = form.plan_id;
+            if (form.notes.trim()) payload.notes = form.notes.trim();
+            if (form.expires_at) payload.expires_at = new Date(form.expires_at).toISOString();
+            await api.post("/admin/discount-codes", payload);
+            setForm({ code: "", months: 12, max_uses: 1, plan_id: "", notes: "", expires_at: "" });
+            await load();
+        } catch (e2) {
+            setErr(e2.response?.data?.detail || "No pudimos crear el código");
+        } finally {
+            setCreating(false);
+        }
+    };
+
+    const onDelete = async (id) => {
+        if (!window.confirm("¿Desactivar este código?")) return;
+        await api.delete(`/admin/discount-codes/${id}`);
+        load();
+    };
+
+    const copyCode = (code) => {
+        navigator.clipboard?.writeText(code);
+    };
+
+    return (
+        <section className="mt-12" data-testid="admin-discount-codes">
+            <div className="flex items-center gap-3 mb-4">
+                <div className="h-10 w-10 rounded-xl bg-rurapp-earth text-white flex items-center justify-center">
+                    <Ticket className="h-5 w-5" />
+                </div>
+                <div>
+                    <h2 className="font-heading text-2xl font-bold">Códigos de descuento</h2>
+                    <p className="text-sm text-rurapp-inkSoft">Regala meses de membresía a productores y veterinarios</p>
+                </div>
+            </div>
+
+            <form onSubmit={onCreate} className="card-rurapp mb-6 grid gap-3 sm:grid-cols-6" data-testid="dc-form">
+                {err && <div className="sm:col-span-6 p-2 rounded-lg bg-red-50 text-red-700 border border-red-200 text-sm" data-testid="dc-err">{err}</div>}
+                <label className="sm:col-span-2 text-sm">
+                    <span className="font-medium">Código (opcional)</span>
+                    <input className="input-rurapp mt-1" value={form.code} placeholder="Se genera automático si lo dejas vacío"
+                        onChange={(e) => setForm({ ...form, code: e.target.value })} data-testid="dc-code" />
+                </label>
+                <label className="text-sm">
+                    <span className="font-medium">Meses gratis</span>
+                    <select className="input-rurapp mt-1" value={form.months} onChange={(e) => setForm({ ...form, months: e.target.value })} data-testid="dc-months">
+                        <option value={1}>1 mes</option>
+                        <option value={3}>3 meses</option>
+                        <option value={6}>6 meses</option>
+                        <option value={12}>12 meses (1 año)</option>
+                        <option value={24}>24 meses (2 años)</option>
+                    </select>
+                </label>
+                <label className="text-sm">
+                    <span className="font-medium">Máx. usos</span>
+                    <input type="number" min={1} className="input-rurapp mt-1" value={form.max_uses}
+                        onChange={(e) => setForm({ ...form, max_uses: e.target.value })} data-testid="dc-uses" />
+                </label>
+                <label className="text-sm">
+                    <span className="font-medium">Plan</span>
+                    <select className="input-rurapp mt-1" value={form.plan_id} onChange={(e) => setForm({ ...form, plan_id: e.target.value })} data-testid="dc-plan">
+                        <option value="">Cualquiera</option>
+                        <option value="basico">Sólo Básico</option>
+                        <option value="pro">Sólo Pro</option>
+                    </select>
+                </label>
+                <label className="text-sm">
+                    <span className="font-medium">Expira (opcional)</span>
+                    <input type="date" className="input-rurapp mt-1" value={form.expires_at}
+                        onChange={(e) => setForm({ ...form, expires_at: e.target.value })} data-testid="dc-expires" />
+                </label>
+                <label className="sm:col-span-5 text-sm">
+                    <span className="font-medium">Notas internas</span>
+                    <input className="input-rurapp mt-1" value={form.notes} placeholder="Ej: Campaña embajadores Boyacá"
+                        onChange={(e) => setForm({ ...form, notes: e.target.value })} data-testid="dc-notes" />
+                </label>
+                <button disabled={creating} type="submit" className="btn-primary sm:col-span-1 inline-flex items-center justify-center gap-2" data-testid="dc-submit">
+                    <Plus className="h-4 w-4" /> {creating ? "Creando…" : "Crear"}
+                </button>
+            </form>
+
+            {codes.length === 0 ? (
+                <div className="card-rurapp text-center py-8 text-rurapp-inkMuted" data-testid="dc-empty">Aún no has creado códigos</div>
+            ) : (
+                <div className="overflow-x-auto rounded-2xl border border-rurapp-edge bg-white">
+                    <table className="w-full text-sm">
+                        <thead className="bg-rurapp-leaf/40 text-rurapp-forest">
+                            <tr>
+                                <th className="text-left px-4 py-2">Código</th>
+                                <th className="text-left px-4 py-2">Meses</th>
+                                <th className="text-left px-4 py-2">Usos</th>
+                                <th className="text-left px-4 py-2">Plan</th>
+                                <th className="text-left px-4 py-2">Expira</th>
+                                <th className="text-left px-4 py-2">Estado</th>
+                                <th className="px-2 py-2"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {codes.map((c) => (
+                                <tr key={c.id} className="border-t border-rurapp-edge" data-testid={`dc-row-${c.id}`}>
+                                    <td className="px-4 py-2 font-mono font-semibold flex items-center gap-2">
+                                        {c.code}
+                                        <button onClick={() => copyCode(c.code)} className="text-rurapp-inkMuted hover:text-rurapp-forest" title="Copiar" data-testid={`dc-copy-${c.id}`}>
+                                            <Copy className="h-3.5 w-3.5" />
+                                        </button>
+                                    </td>
+                                    <td className="px-4 py-2">{c.months}</td>
+                                    <td className="px-4 py-2">{c.uses}/{c.max_uses}</td>
+                                    <td className="px-4 py-2">{c.plan_id || "cualquiera"}</td>
+                                    <td className="px-4 py-2">{c.expires_at ? c.expires_at.slice(0, 10) : "—"}</td>
+                                    <td className="px-4 py-2">
+                                        {c.active ? <span className="chip">Activo</span> : <span className="text-xs text-rurapp-inkMuted">Inactivo</span>}
+                                    </td>
+                                    <td className="px-2 py-2 text-right">
+                                        {c.active && (
+                                            <button onClick={() => onDelete(c.id)} className="text-red-600 hover:bg-red-50 rounded-lg p-1.5" title="Desactivar" data-testid={`dc-del-${c.id}`}>
+                                                <Trash2 className="h-4 w-4" />
+                                            </button>
+                                        )}
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            )}
+        </section>
+    );
+}
+

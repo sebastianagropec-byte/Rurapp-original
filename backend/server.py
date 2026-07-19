@@ -2,7 +2,7 @@
 
 Marketplace + servicios + membresías para conectar el campo y la ciudad.
 """
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, UploadFile, File
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -22,6 +22,7 @@ from models import (
     ArticleCreate, Article,
     AIChatRequest, AIChatResponse,
     MembershipCheckoutRequest, PaymentTransaction,
+    DiscountCodeCreate, DiscountCode, DiscountCodeRedeem,
     now_iso, gen_id,
 )
 from auth import (
@@ -121,6 +122,63 @@ def public_user(doc: dict) -> dict:
 @api_router.get("/")
 async def root():
     return {"app": "Rurapp", "status": "ok"}
+
+
+# =========================
+# IMAGE UPLOAD (base64 data URL)
+# =========================
+_ALLOWED_IMG_MIMES = {"image/jpeg", "image/jpg", "image/png", "image/webp"}
+_MAX_IMG_BYTES = 5 * 1024 * 1024  # 5 MB raw upload cap
+
+
+@api_router.post("/uploads/image")
+async def upload_image(
+    file: UploadFile = File(...),
+    user_id: str = Depends(get_current_user_id),
+):
+    """Uploads an image (PNG/JPG/WEBP), resizes it, and returns a base64 data URL.
+
+    The URL is what should be stored in `image_url` fields for products / services
+    / articles. Storing base64 avoids needing external object storage while keeping
+    deploys idempotent.
+    """
+    if file.content_type not in _ALLOWED_IMG_MIMES:
+        raise HTTPException(
+            status_code=400,
+            detail="Formato no soportado. Sube una imagen PNG, JPG o WEBP.",
+        )
+    raw = await file.read()
+    if len(raw) > _MAX_IMG_BYTES:
+        raise HTTPException(status_code=400, detail="La imagen supera 5 MB")
+    if len(raw) < 100:
+        raise HTTPException(status_code=400, detail="Archivo vacío o inválido")
+
+    # Resize to max 1200px on longest side to keep data URL small
+    import base64
+    import io
+    from PIL import Image, ImageOps
+    try:
+        img = Image.open(io.BytesIO(raw))
+        img = ImageOps.exif_transpose(img)  # respect phone orientation
+        img.thumbnail((1200, 1200), Image.LANCZOS)
+        buf = io.BytesIO()
+        # Always output JPEG (smaller) unless PNG has alpha
+        if img.mode in ("RGBA", "LA"):
+            img.save(buf, format="PNG", optimize=True)
+            mime = "image/png"
+        else:
+            if img.mode != "RGB":
+                img = img.convert("RGB")
+            img.save(buf, format="JPEG", quality=82, optimize=True)
+            mime = "image/jpeg"
+        b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+        data_url = f"data:{mime};base64,{b64}"
+        return {"url": data_url, "size": len(buf.getvalue()), "mime": mime}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.exception("Image processing failed: %s", e)
+        raise HTTPException(status_code=400, detail="No pudimos procesar la imagen") from e
 
 
 # =========================
@@ -722,6 +780,159 @@ async def start_trial(
         "membership_expires_at": expires,
         "plan_id": payload.plan_id,
         "days": 7,
+    }
+
+
+# =========================
+# DISCOUNT CODES (admin generates, users redeem)
+# =========================
+ADMIN_EMAILS_SET = {e.strip().lower() for e in os.environ.get("ADMIN_EMAILS", "").split(",") if e.strip()}
+
+
+def _is_admin_user(user: dict) -> bool:
+    return bool(user.get("is_admin")) or user.get("email", "").lower() in ADMIN_EMAILS_SET
+
+
+async def _require_admin(user_id: str) -> dict:
+    user = await get_user_doc(user_id)
+    if not _is_admin_user(user):
+        raise HTTPException(status_code=403, detail="Solo administradores")
+    return user
+
+
+def _gen_discount_code() -> str:
+    import secrets
+    import string
+    alphabet = string.ascii_uppercase + string.digits
+    # exclude ambiguous chars
+    alphabet = "".join(c for c in alphabet if c not in "O0I1")
+    return "RURA-" + "".join(secrets.choice(alphabet) for _ in range(8))
+
+
+@api_router.post("/admin/discount-codes", response_model=DiscountCode)
+async def admin_create_discount_code(
+    payload: DiscountCodeCreate,
+    user_id: str = Depends(get_current_user_id),
+):
+    admin = await _require_admin(user_id)
+    code = (payload.code or _gen_discount_code()).strip().upper()
+    if not code:
+        raise HTTPException(status_code=400, detail="Código inválido")
+    existing = await db.discount_codes.find_one({"code": code}, {"_id": 0})
+    if existing:
+        raise HTTPException(status_code=400, detail="Ese código ya existe")
+    dc = DiscountCode(
+        code=code,
+        months=payload.months,
+        max_uses=payload.max_uses,
+        expires_at=payload.expires_at,
+        notes=payload.notes,
+        plan_id=payload.plan_id,
+        created_by=admin["id"],
+    )
+    await db.discount_codes.insert_one(dc.model_dump())
+    return dc
+
+
+@api_router.get("/admin/discount-codes", response_model=List[DiscountCode])
+async def admin_list_discount_codes(user_id: str = Depends(get_current_user_id)):
+    await _require_admin(user_id)
+    docs = await db.discount_codes.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
+    return [DiscountCode(**d) for d in docs]
+
+
+@api_router.delete("/admin/discount-codes/{code_id}")
+async def admin_delete_discount_code(code_id: str, user_id: str = Depends(get_current_user_id)):
+    await _require_admin(user_id)
+    result = await db.discount_codes.update_one(
+        {"id": code_id}, {"$set": {"active": False}}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Código no encontrado")
+    return {"ok": True}
+
+
+@api_router.post("/memberships/redeem-code")
+async def redeem_discount_code(
+    payload: DiscountCodeRedeem,
+    user_id: str = Depends(get_current_user_id),
+):
+    """Canjea un código de descuento y activa la membresía por N meses gratis."""
+    user = await require_role(user_id, ["productor", "veterinario"])
+    if payload.plan_id not in MEMBERSHIP_PLANS:
+        raise HTTPException(status_code=400, detail="Plan inválido")
+    code_str = payload.code.strip().upper()
+    if not code_str:
+        raise HTTPException(status_code=400, detail="Escribe un código")
+    dc = await db.discount_codes.find_one({"code": code_str}, {"_id": 0})
+    if not dc or not dc.get("active"):
+        raise HTTPException(status_code=404, detail="Código inválido o inactivo")
+    if dc.get("uses", 0) >= dc.get("max_uses", 1):
+        raise HTTPException(status_code=400, detail="Este código ya alcanzó su límite de usos")
+    if dc.get("expires_at"):
+        try:
+            exp = datetime.fromisoformat(dc["expires_at"].replace("Z", "+00:00"))
+            if exp < datetime.now(timezone.utc):
+                raise HTTPException(status_code=400, detail="Este código expiró")
+        except HTTPException:
+            raise
+        except (ValueError, TypeError):
+            pass
+    if dc.get("plan_id") and dc["plan_id"] != payload.plan_id:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Este código solo aplica al plan {dc['plan_id']}",
+        )
+    # Log redemption idempotently: prevent same user re-using same code
+    already = await db.discount_redemptions.find_one(
+        {"code_id": dc["id"], "user_id": user_id}, {"_id": 0}
+    )
+    if already:
+        raise HTTPException(status_code=400, detail="Ya canjeaste este código")
+
+    months = int(dc["months"])
+    now = datetime.now(timezone.utc)
+    # If user already has an active paid/trial membership, extend from that expiry
+    current_expires_iso = user.get("membership_expires_at")
+    base = now
+    if user.get("membership_active") and current_expires_iso:
+        try:
+            current_exp = datetime.fromisoformat(current_expires_iso.replace("Z", "+00:00"))
+            if current_exp > now:
+                base = current_exp
+        except (ValueError, TypeError):
+            pass
+    new_expires = (base + timedelta(days=months * 30)).isoformat()
+
+    await db.users.update_one(
+        {"id": user_id},
+        {"$set": {
+            "membership_active": True,
+            "membership_plan": payload.plan_id,
+            "membership_expires_at": new_expires,
+            "on_trial": False,
+        }},
+    )
+    await db.discount_codes.update_one(
+        {"id": dc["id"]}, {"$inc": {"uses": 1}}
+    )
+    await db.discount_redemptions.insert_one({
+        "id": gen_id(),
+        "code_id": dc["id"],
+        "code": dc["code"],
+        "user_id": user_id,
+        "user_email": user["email"],
+        "plan_id": payload.plan_id,
+        "months": months,
+        "expires_at": new_expires,
+        "created_at": now_iso(),
+    })
+    return {
+        "ok": True,
+        "months": months,
+        "membership_expires_at": new_expires,
+        "plan_id": payload.plan_id,
+        "code": dc["code"],
     }
 
 

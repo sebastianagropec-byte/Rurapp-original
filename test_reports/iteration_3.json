@@ -1,0 +1,52 @@
+{
+  "summary": "Iteration 3 testing for Rurapp — Image upload bug fix + Admin discount codes + Redemption flow. Ran 21 new backend tests in /app/backend/tests/test_iteration3.py + 6 UI flows via Playwright. Backend: 21/21 passed (100%). Frontend: all 7 checked flows pass (branding, producer login, image uploader UI, base64 preview render, product card renders base64 image with naturalWidth>0, redeem-code card visible for producer, admin creates RURA- code and it appears in table). Also re-seeded backend once because campesino user's membership_active had been flipped by earlier iterations (future-dated expires_at but active=false). No new bugs found. Regression checks (start-trial one-time, membership checkout stripe/wompi/mercadopago) all still pass.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "POST /api/uploads/image",
+        "issue": "Rejects images <100 bytes with generic 'Archivo vacío o inválido'. Very small solid-color PNGs (~85 bytes) trip this. Not user-facing under normal conditions but the threshold could be lowered to say 20 bytes, or the check dropped in favor of trusting PIL to reject truly malformed input."
+      },
+      {
+        "endpoint": "POST /api/uploads/image",
+        "issue": "5 MB limit is checked on RAW upload bytes, not on the resulting base64 string. Since data URLs are ~1.37x larger, a 5 MB upload could store a ~6.7 MB image_url in Mongo. Product documents may cross the 16 MB BSON limit if a user uploads many large images to one product. Consider storing at max ~2 MB output or moving to object storage before scale."
+      },
+      {
+        "endpoint": "get_user_doc() auto-downgrade",
+        "issue": "campesino@rurapp.co seed user was found with membership_active=false but membership_expires_at in the future. Not reproducible from a fresh seed — appears to be state left over from previous iteration tests that toggled membership. Re-seed fixes it. Consider making seed idempotent-refresh on every run OR guarding against inconsistent state (active=false but expires_at in future) in the status endpoint."
+    }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Admin > Códigos de descuento table", "issues": ["Table is dense with many prior test rows (23 rows visible during test). Consider pagination or filter (active/inactive) for admin UX at scale."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration3.py",
+    "/app/test_reports/pytest/iteration3_results.xml"
+  ],
+  "action_items": [
+    "None blocking — all core requirements verified working. Optional: consider bounding the size of the stored base64 data URL (compress harder or clamp longest side to 800px) since 5 MB uploads inflate to ~7 MB after base64."
+  ],
+  "critical_code_review_comments": [
+    "server.py adds CORSMiddleware + logging.basicConfig TWICE (lines 1369-1394). The second block is dead / duplicate — remove.",
+    "/api/uploads/image imports PIL, base64, io INSIDE the request handler. Move to module top-level for perf.",
+    "Base64 storage in Mongo: works for MVP but every product read now hauls the full image bytes over the wire on /api/products (500-doc list). Marketplace scroll will get slow. Consider a separate collection or thumbnail field.",
+    "DiscountCode.uses field is $inc'd on redeem but the max_uses check is done BEFORE the increment without a transaction — a race between two simultaneous redeems could overshoot max_uses. Low likelihood at scale, but note it.",
+    "server.py is now 1400+ lines. Split into routers/ (auth, products, services, orders, bookings, memberships, admin, uploads).",
+    "MembershipCheckoutRequest is reused for /memberships/start-trial and /memberships/redeem-code path is a separate model — the trial route requires origin_url even though it doesn't use it. Cleaner to have a StartTrialRequest with only plan_id."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration3.py (new — 21 pytest cases)"
+  ],
+  "success_rate": {"backend": "100% (21/21)", "frontend": "100% (7/7 flows verified via Playwright)"},
+  "test_credentials": "campesino@rurapp.co / rurapp123 (productor, membership toggled by tests — re-seed if needed); admin@rurapp.co / rurapp123 (is_admin); cliente@rurapp.co / rurapp123. Fresh producers created inline with test_prod_<ts>@rurapp.co pattern.",
+  "seed_data_creation": "Tests create several TEST_ prefixed products (auto-cleaned) and RURA-<random> discount codes (kept in DB — safe to leave; they are inert unless redeemed). Also multiple test_prod_<ts>@rurapp.co users. Ran `python /app/backend/seed.py` once to reset campesino's membership_active flag.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run tests: `cd /app/backend && REACT_APP_BACKEND_URL=<url> pytest tests/test_iteration3.py -v`. If campesino membership becomes inactive again (some tests flip it via redeem/checkout), re-run `python /app/backend/seed.py`. The Playwright UI script exercised: landing branding, producer login, /mis-productos/nuevo image upload (base64 flow end-to-end), /membresia redeem-code card visibility, /admin → discount codes create. All passing. Backend admin discount code table already has 23+ RURA- codes accumulated; consider deleting all inactive ones in a cleanup task.",
+  "rca_of_the_issue": "N/A — no new issues. Prior iteration_2 bug (register lat/lng) was NOT retested in this iteration (out of scope for review_request)."
+}

@@ -383,3 +383,33 @@ class Verification(BaseModel):
 class AdminReviewRequest(BaseModel):
     decision: Literal["approve", "reject"]
     admin_notes: Optional[str] = None
+
+
+# ===== DISCOUNT CODES (Admin-generated, applied to memberships) =====
+class DiscountCodeCreate(BaseModel):
+    code: Optional[str] = None  # if None, generated server-side
+    months: int = Field(ge=1, le=36)  # meses de membresía gratis a aplicar
+    max_uses: int = Field(default=1, ge=1, le=10000)
+    expires_at: Optional[str] = None  # ISO date (opcional)
+    notes: Optional[str] = None
+    plan_id: Optional[Literal["basico", "pro"]] = None  # None = cualquier plan
+
+
+class DiscountCode(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=gen_id)
+    code: str
+    months: int
+    max_uses: int = 1
+    uses: int = 0
+    expires_at: Optional[str] = None
+    notes: Optional[str] = None
+    plan_id: Optional[str] = None
+    active: bool = True
+    created_by: str
+    created_at: str = Field(default_factory=now_iso)
+
+
+class DiscountCodeRedeem(BaseModel):
+    code: str
+    plan_id: Literal["basico", "pro"] = "basico"

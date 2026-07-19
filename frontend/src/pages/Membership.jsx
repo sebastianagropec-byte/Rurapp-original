@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
-import { Check, Sparkles, Crown, Gift, Clock, AlertTriangle } from "lucide-react";
+import { Check, Sparkles, Crown, Gift, Clock, AlertTriangle, Ticket } from "lucide-react";
 import PaymentProviderSelector from "../components/PaymentProviderSelector";
 
 export default function Membership() {
@@ -13,6 +13,10 @@ export default function Membership() {
     const [loading, setLoading] = useState("");
     const [trialLoading, setTrialLoading] = useState("");
     const [provider, setProvider] = useState("stripe");
+    const [redeemCode, setRedeemCode] = useState("");
+    const [redeemPlan, setRedeemPlan] = useState("basico");
+    const [redeemLoading, setRedeemLoading] = useState(false);
+    const [redeemMsg, setRedeemMsg] = useState(null);
 
     const loadStatus = async () => {
         if (!user || user.role === "cliente") return;
@@ -60,6 +64,32 @@ export default function Membership() {
         } catch (e) {
             alert(e.response?.data?.detail || "Error al iniciar pago");
             setLoading("");
+        }
+    };
+
+    const onRedeem = async (e) => {
+        e.preventDefault();
+        if (!user) return navigate("/login");
+        setRedeemMsg(null); setRedeemLoading(true);
+        try {
+            const { data } = await api.post("/memberships/redeem-code", {
+                code: redeemCode.trim(),
+                plan_id: redeemPlan,
+            });
+            setRedeemMsg({
+                type: "ok",
+                text: `¡Listo! Activamos ${data.months} mes(es) del plan ${data.plan_id} sin pago. Válido hasta ${data.membership_expires_at.slice(0, 10)}.`,
+            });
+            setRedeemCode("");
+            await refresh?.();
+            await loadStatus();
+        } catch (e2) {
+            setRedeemMsg({
+                type: "err",
+                text: e2.response?.data?.detail || "No pudimos canjear ese código",
+            });
+        } finally {
+            setRedeemLoading(false);
         }
     };
 
@@ -154,9 +184,44 @@ export default function Membership() {
                 ))}
             </div>
             {(user?.role === "productor" || user?.role === "veterinario") && (
-                <div className="card-rurapp mt-6 max-w-md mx-auto">
-                    <PaymentProviderSelector value={provider} onChange={setProvider} dataTestPrefix="mem-pp" allowCod={false} />
-                </div>
+                <>
+                    <div className="card-rurapp mt-6 max-w-md mx-auto" data-testid="redeem-code-card">
+                        <div className="flex items-center gap-2 mb-2">
+                            <Ticket className="h-5 w-5 text-rurapp-earth" />
+                            <h3 className="font-heading text-lg font-semibold">¿Tienes un código de descuento?</h3>
+                        </div>
+                        <p className="text-sm text-rurapp-inkSoft mb-3">Canjea meses gratis de membresía sin necesidad de pagar.</p>
+                        <form onSubmit={onRedeem} className="space-y-3">
+                            <input
+                                required
+                                className="input-rurapp font-mono uppercase tracking-widest"
+                                placeholder="RURA-XXXXXXXX"
+                                value={redeemCode}
+                                onChange={(ev) => setRedeemCode(ev.target.value.toUpperCase())}
+                                data-testid="redeem-code-input"
+                            />
+                            <select className="input-rurapp" value={redeemPlan} onChange={(ev) => setRedeemPlan(ev.target.value)} data-testid="redeem-plan-select">
+                                <option value="basico">Plan Básico</option>
+                                <option value="pro">Plan Pro</option>
+                            </select>
+                            <button disabled={redeemLoading || !redeemCode.trim()} className="btn-outline w-full inline-flex items-center justify-center gap-2" data-testid="redeem-submit">
+                                <Ticket className="h-4 w-4" />
+                                {redeemLoading ? "Canjeando…" : "Canjear código"}
+                            </button>
+                            {redeemMsg && (
+                                <div
+                                    className={`text-sm p-2 rounded-lg border ${redeemMsg.type === "ok" ? "bg-rurapp-leaf/60 border-rurapp-forest/30 text-rurapp-forest" : "bg-red-50 border-red-200 text-red-700"}`}
+                                    data-testid="redeem-msg"
+                                >
+                                    {redeemMsg.text}
+                                </div>
+                            )}
+                        </form>
+                    </div>
+                    <div className="card-rurapp mt-6 max-w-md mx-auto">
+                        <PaymentProviderSelector value={provider} onChange={setProvider} dataTestPrefix="mem-pp" allowCod={false} />
+                    </div>
+                </>
             )}
         </div>
     );

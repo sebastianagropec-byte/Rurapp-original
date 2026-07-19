@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
-import { Plus, Edit3, Trash2 } from "lucide-react";
+import { Plus, Edit3, Trash2, ImageIcon, Upload, X } from "lucide-react";
 
 export function MyProducts() {
     const { user } = useAuth();
@@ -31,7 +31,13 @@ export function MyProducts() {
                 <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
                     {products.map((p) => (
                         <div key={p.id} className="card-rurapp" data-testid={`mp-${p.id}`}>
-                            {p.image_url && <img src={p.image_url} alt="" className="h-40 w-full object-cover rounded-xl mb-3" />}
+                            {p.image_url ? (
+                                <img src={p.image_url} alt="" className="h-40 w-full object-cover rounded-xl mb-3" />
+                            ) : (
+                                <div className="h-40 w-full rounded-xl mb-3 bg-rurapp-leaf/50 border border-rurapp-edge flex items-center justify-center text-rurapp-inkMuted">
+                                    <ImageIcon className="h-8 w-8" />
+                                </div>
+                            )}
                             <h3 className="font-heading font-semibold">{p.name}</h3>
                             <p className="text-sm text-rurapp-inkSoft line-clamp-2">{p.description}</p>
                             <div className="mt-3 flex items-center justify-between">
@@ -60,6 +66,32 @@ export function ProductForm({ editing }) {
     const [practiceInput, setPracticeInput] = useState("");
     const [err, setErr] = useState("");
     const [loading, setLoading] = useState(false);
+    const [uploading, setUploading] = useState(false);
+
+    const onFile = async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        if (!/^image\/(jpeg|jpg|png|webp)$/i.test(file.type)) {
+            setErr("Solo se aceptan imágenes JPG, PNG o WEBP");
+            return;
+        }
+        if (file.size > 5 * 1024 * 1024) {
+            setErr("La imagen supera 5 MB");
+            return;
+        }
+        setErr(""); setUploading(true);
+        try {
+            const fd = new FormData();
+            fd.append("file", file);
+            const { data } = await api.post("/uploads/image", fd);
+            setForm((f) => ({ ...f, image_url: data.url }));
+        } catch (e2) {
+            setErr(e2.response?.data?.detail || "No pudimos subir la imagen");
+        } finally {
+            setUploading(false);
+            e.target.value = "";
+        }
+    };
 
     useEffect(() => {
         if (editing) {
@@ -101,7 +133,23 @@ export function ProductForm({ editing }) {
                     <Field label="Precio (COP)" testId="pf-price"><input type="number" required min={0} step="0.01" className="input-rurapp" value={form.price} onChange={(e) => setForm({ ...form, price: parseFloat(e.target.value) || 0 })} /></Field>
                     <Field label="Unidad" testId="pf-unit"><input required className="input-rurapp" value={form.unit} onChange={(e) => setForm({ ...form, unit: e.target.value })} placeholder="kg, libra, unidad" /></Field>
                     <Field label="Stock" testId="pf-stock"><input type="number" required min={0} className="input-rurapp" value={form.stock} onChange={(e) => setForm({ ...form, stock: parseInt(e.target.value) || 0 })} /></Field>
-                    <Field label="URL de imagen" testId="pf-img"><input className="input-rurapp" value={form.image_url} onChange={(e) => setForm({ ...form, image_url: e.target.value })} placeholder="https://..." /></Field>
+                </div>
+                <div data-testid="pf-image-block">
+                    <span className="text-sm font-medium">Foto del producto</span>
+                    <p className="text-xs text-rurapp-inkMuted mt-0.5">Sube una foto (JPG, PNG o WEBP, máx. 5 MB). Se ve mejor si es horizontal y clara.</p>
+                    <div className="mt-2 flex flex-col sm:flex-row gap-3 items-start">
+                        <label className={`btn-outline inline-flex items-center gap-2 cursor-pointer ${uploading ? "opacity-60 pointer-events-none" : ""}`} data-testid="pf-upload-btn">
+                            <Upload className="h-4 w-4" />
+                            {uploading ? "Subiendo…" : (form.image_url ? "Cambiar foto" : "Subir foto")}
+                            <input type="file" accept="image/jpeg,image/jpg,image/png,image/webp" className="hidden" onChange={onFile} data-testid="pf-file-input" />
+                        </label>
+                        {form.image_url && (
+                            <div className="relative">
+                                <img src={form.image_url} alt="Vista previa" className="h-24 w-24 rounded-xl object-cover border border-rurapp-edge" data-testid="pf-image-preview" />
+                                <button type="button" onClick={() => setForm({ ...form, image_url: "" })} className="absolute -top-2 -right-2 h-6 w-6 rounded-full bg-white border border-rurapp-edge shadow flex items-center justify-center text-rurapp-inkSoft hover:text-red-600" data-testid="pf-image-remove" aria-label="Quitar foto"><X className="h-3.5 w-3.5" /></button>
+                            </div>
+                        )}
+                    </div>
                 </div>
                 <Field label="Descripción" testId="pf-desc"><textarea required rows={3} className="input-rurapp" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></Field>
                 <Field label="Historia / trazabilidad" testId="pf-story"><textarea rows={3} className="input-rurapp" value={form.origin_story} onChange={(e) => setForm({ ...form, origin_story: e.target.value })} placeholder="Cuenta de dónde viene tu producto, cómo lo cultivas…" /></Field>
