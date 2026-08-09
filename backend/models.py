@@ -62,6 +62,31 @@ class UserPublic(BaseModel):
     created_at: str = Field(default_factory=now_iso)
 
 
+class UserDirectory(BaseModel):
+    """Public-safe user projection for directory listings and profiles.
+
+    Excludes email, phone, is_admin and precise GPS. Coordinates are fuzzed to
+    ~1.1 km precision (2 decimals) to preserve map utility without exposing
+    exact home locations.
+    """
+    model_config = ConfigDict(extra="ignore")
+    id: str
+    full_name: str
+    role: UserRole
+    location: Optional[str] = None
+    bio: Optional[str] = None
+    avatar_url: Optional[str] = None
+    sustainable_practices: Optional[List[str]] = []
+    specialty: Optional[str] = None
+    verified: bool = False
+    verification_status: Optional[str] = "none"
+    rating_avg: float = 0.0
+    rating_count: int = 0
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+    created_at: str = Field(default_factory=now_iso)
+
+
 class UserUpdate(BaseModel):
     full_name: Optional[str] = None
     phone: Optional[str] = None

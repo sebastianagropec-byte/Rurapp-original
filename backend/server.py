@@ -13,7 +13,7 @@ from typing import List, Optional
 from datetime import datetime, timezone, timedelta
 
 from models import (
-    UserCreate, UserLogin, UserPublic, UserUpdate, TokenResponse,
+    UserCreate, UserLogin, UserPublic, UserUpdate, UserDirectory, TokenResponse,
     ProductCreate, ProductUpdate, Product,
     ServiceCreate, ServiceUpdate, Service,
     OrderCreateRequest, Order, OrderItem,
@@ -252,21 +252,58 @@ async def update_me(
 # =========================
 # USERS (public profiles)
 # =========================
-@api_router.get("/users/{user_id}", response_model=UserPublic)
+def _to_directory(doc: dict) -> UserDirectory:
+    """Build a public-safe user projection with fuzzed coordinates (~1.1 km)."""
+    lat = doc.get("lat")
+    lng = doc.get("lng")
+    return UserDirectory(
+        id=doc["id"],
+        full_name=doc["full_name"],
+        role=doc["role"],
+        location=doc.get("location"),
+        bio=doc.get("bio"),
+        avatar_url=doc.get("avatar_url"),
+        sustainable_practices=doc.get("sustainable_practices") or [],
+        specialty=doc.get("specialty"),
+        verified=bool(doc.get("verified")),
+        verification_status=doc.get("verification_status") or "none",
+        rating_avg=float(doc.get("rating_avg") or 0.0),
+        rating_count=int(doc.get("rating_count") or 0),
+        lat=round(lat, 2) if isinstance(lat, (int, float)) else None,
+        lng=round(lng, 2) if isinstance(lng, (int, float)) else None,
+        created_at=doc.get("created_at") or now_iso(),
+    )
+
+
+@api_router.get("/users/{user_id}", response_model=UserDirectory)
 async def get_user_public(user_id: str):
     doc = await get_user_doc(user_id)
-    return UserPublic(**doc)
+    return _to_directory(doc)
 
 
-@api_router.get("/users", response_model=List[UserPublic])
-async def list_users(role: Optional[str] = None, location: Optional[str] = None):
+@api_router.get("/users", response_model=List[UserDirectory])
+async def list_users(
+    role: Optional[str] = None,
+    location: Optional[str] = None,
+    limit: int = 100,
+    skip: int = 0,
+):
     query = {}
     if role:
         query["role"] = role
     if location:
         query["location"] = {"$regex": location, "$options": "i"}
-    docs = await db.users.find(query, {"_id": 0, "password_hash": 0}).to_list(500)
-    return [UserPublic(**d) for d in docs]
+    limit = max(1, min(limit, 200))
+    skip = max(0, skip)
+    docs = await db.users.find(
+        query,
+        {
+            "_id": 0, "password_hash": 0, "email": 0, "phone": 0,
+            "is_admin": 0, "membership_active": 0, "membership_expires_at": 0,
+            "membership_plan": 0, "on_trial": 0, "trial_used": 0, "trial_ends_at": 0,
+        },
+    ).skip(skip).limit(limit).to_list(limit)
+    return [_to_directory(d) for d in docs]
 
 
 # =========================
@@ -299,6 +336,8 @@ async def list_products(
     location: Optional[str] = None,
     producer_id: Optional[str] = None,
     search: Optional[str] = None,
+    limit: int = 50,
+    skip: int = 0,
 ):
     query = {"active": True}
     if category:
@@ -312,7 +351,9 @@ async def list_products(
             {"name": {"$regex": search, "$options": "i"}},
             {"description": {"$regex": search, "$options": "i"}},
         ]
-    docs = await db.products.find(query, {"_id": 0}).sort("created_at", -1).to_list(500)
+    limit = max(1, min(limit, 100))
+    skip = max(0, skip)
+    docs = await db.products.find(query, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
     return [Product(**d) for d in docs]
 
 
@@ -392,6 +433,8 @@ async def list_services(
     location: Optional[str] = None,
     expert_id: Optional[str] = None,
     search: Optional[str] = None,
+    limit: int = 50,
+    skip: int = 0,
 ):
     query = {"active": True}
     if category:
@@ -405,7 +448,9 @@ async def list_services(
             {"title": {"$regex": search, "$options": "i"}},
             {"description": {"$regex": search, "$options": "i"}},
         ]
-    docs = await db.services.find(query, {"_id": 0}).sort("created_at", -1).to_list(500)
+    limit = max(1, min(limit, 100))
+    skip = max(0, skip)
+    docs = await db.services.find(query, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
     return [Service(**d) for d in docs]
 
 
@@ -857,41 +902,56 @@ async def redeem_discount_code(
     payload: DiscountCodeRedeem,
     user_id: str = Depends(get_current_user_id),
 ):
-    """Canjea un código de descuento y activa la membresía por N meses gratis."""
+    """Canjea un código de descuento y activa la membresía por N meses gratis.
+
+    Concurrency-safe: uses an atomic ``find_one_and_update`` that only increments
+    ``uses`` when the code is still available. Double redemption by the same
+    user is prevented by the unique index on ``(code_id, user_id)`` in
+    ``discount_redemptions`` (see startup hook).
+    """
     user = await require_role(user_id, ["productor", "veterinario"])
     if payload.plan_id not in MEMBERSHIP_PLANS:
         raise HTTPException(status_code=400, detail="Plan inválido")
     code_str = payload.code.strip().upper()
     if not code_str:
         raise HTTPException(status_code=400, detail="Escribe un código")
-    dc = await db.discount_codes.find_one({"code": code_str}, {"_id": 0})
-    if not dc or not dc.get("active"):
+
+    now = datetime.now(timezone.utc)
+
+    # Look up the code first (read-only) to give precise error messages
+    dc_lookup = await db.discount_codes.find_one({"code": code_str}, {"_id": 0})
+    if not dc_lookup or not dc_lookup.get("active"):
         raise HTTPException(status_code=404, detail="Código inválido o inactivo")
-    if dc.get("uses", 0) >= dc.get("max_uses", 1):
-        raise HTTPException(status_code=400, detail="Este código ya alcanzó su límite de usos")
-    if dc.get("expires_at"):
+    if dc_lookup.get("plan_id") and dc_lookup["plan_id"] != payload.plan_id:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Este código solo aplica al plan {dc_lookup['plan_id']}",
+        )
+    if dc_lookup.get("expires_at"):
         try:
-            exp = datetime.fromisoformat(dc["expires_at"].replace("Z", "+00:00"))
-            if exp < datetime.now(timezone.utc):
+            exp = datetime.fromisoformat(dc_lookup["expires_at"].replace("Z", "+00:00"))
+            if exp < now:
                 raise HTTPException(status_code=400, detail="Este código expiró")
         except HTTPException:
             raise
         except (ValueError, TypeError):
             pass
-    if dc.get("plan_id") and dc["plan_id"] != payload.plan_id:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Este código solo aplica al plan {dc['plan_id']}",
-        )
-    # Log redemption idempotently: prevent same user re-using same code
-    already = await db.discount_redemptions.find_one(
-        {"code_id": dc["id"], "user_id": user_id}, {"_id": 0}
+
+    # ATOMIC claim: increment `uses` only if still under max_uses and active.
+    dc = await db.discount_codes.find_one_and_update(
+        {
+            "code": code_str,
+            "active": True,
+            "$expr": {"$lt": ["$uses", "$max_uses"]},
+        },
+        {"$inc": {"uses": 1}},
+        projection={"_id": 0},
+        return_document=True,  # motor: True == AFTER
     )
-    if already:
-        raise HTTPException(status_code=400, detail="Ya canjeaste este código")
+    if not dc:
+        raise HTTPException(status_code=400, detail="Este código ya alcanzó su límite de usos")
 
     months = int(dc["months"])
-    now = datetime.now(timezone.utc)
     # If user already has an active paid/trial membership, extend from that expiry
     current_expires_iso = user.get("membership_expires_at")
     base = now
@@ -904,6 +964,26 @@ async def redeem_discount_code(
             pass
     new_expires = (base + timedelta(days=months * 30)).isoformat()
 
+    # Record the redemption with a unique (code_id, user_id) constraint
+    # If the same user tries again, DuplicateKeyError → rollback the increment
+    from pymongo.errors import DuplicateKeyError
+    try:
+        await db.discount_redemptions.insert_one({
+            "id": gen_id(),
+            "code_id": dc["id"],
+            "code": dc["code"],
+            "user_id": user_id,
+            "user_email": user["email"],
+            "plan_id": payload.plan_id,
+            "months": months,
+            "expires_at": new_expires,
+            "created_at": now_iso(),
+        })
+    except DuplicateKeyError:
+        # Undo the claim we just made
+        await db.discount_codes.update_one({"id": dc["id"]}, {"$inc": {"uses": -1}})
+        raise HTTPException(status_code=400, detail="Ya canjeaste este código") from None
+
     await db.users.update_one(
         {"id": user_id},
         {"$set": {
@@ -913,20 +993,6 @@ async def redeem_discount_code(
             "on_trial": False,
         }},
     )
-    await db.discount_codes.update_one(
-        {"id": dc["id"]}, {"$inc": {"uses": 1}}
-    )
-    await db.discount_redemptions.insert_one({
-        "id": gen_id(),
-        "code_id": dc["id"],
-        "code": dc["code"],
-        "user_id": user_id,
-        "user_email": user["email"],
-        "plan_id": payload.plan_id,
-        "months": months,
-        "expires_at": new_expires,
-        "created_at": now_iso(),
-    })
     return {
         "ok": True,
         "months": months,
@@ -1381,21 +1447,19 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+@app.on_event("startup")
+async def _startup_indexes():
+    """Ensure indexes needed for correctness (idempotent)."""
+    try:
+        await db.discount_redemptions.create_index(
+            [("code_id", 1), ("user_id", 1)], unique=True, name="ux_code_user"
+        )
+        await db.discount_codes.create_index("code", unique=True, name="ux_code")
+    except Exception as e:  # pragma: no cover
+        logging.warning("index setup failed: %s", e)
+
+
 @app.on_event("shutdown")
 async def shutdown_db_client():
     client.close()
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_credentials=True,
-    allow_origins=os.environ.get("CORS_ORIGINS", "*").split(","),
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
-logger = logging.getLogger(__name__)
 
