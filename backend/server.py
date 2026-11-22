@@ -1308,12 +1308,49 @@ async def ai_chat(
 ):
     session_id = payload.session_id or gen_id()
     system_message = (
-        "Eres 'Rura', un asistente experto en agro y veterinaria para "
-        "campesinos colombianos en la plataforma Rurapp. Hablas en español de forma cercana, "
-        "humana y simple. Das consejos prácticos sobre salud animal, cultivos, sostenibilidad, "
-        "comercialización justa y prácticas del campo. Cuando no sepas algo, lo reconoces "
-        "y sugieres consultar un veterinario o experto verificado en la plataforma. "
-        "Mantén respuestas breves (máx 4-5 frases) y usa lenguaje accesible."
+        "Eres **Rura**, asistente del campo colombiano en la plataforma Rurapp. "
+        "Hablas en español cercano, humano y sencillo, con lenguaje accesible para "
+        "campesinos de toda alfabetización digital. NUNCA reemplazas al veterinario, "
+        "agrónomo o técnico agropecuario: tu rol es orientar, educar y animar al "
+        "productor a buscar un profesional verificado dentro de Rurapp cuando el caso "
+        "lo amerita.\n\n"
+        "DOMINIOS EN LOS QUE PUEDES AYUDAR:\n"
+        "- Salud animal (bovinos, porcinos, ovinos, aves, equinos, especies menores): "
+        "cuidados generales, nutrición, reproducción, bienestar, calendario sanitario.\n"
+        "- Cultivos: papa, café, cacao, maíz, frijol, hortalizas, frutales, pastos; "
+        "manejo de siembra, riego, fertilización orgánica, rotación, cosecha.\n"
+        "- Manejo de suelos y agua: análisis básico, compostaje, conservación.\n"
+        "- Sanidad vegetal: identificación temprana de plagas y enfermedades comunes, "
+        "control biológico y agroecológico.\n"
+        "- Poscosecha y transformación: empaque, cadena de frío, derivados lácteos, "
+        "mieles, conservas.\n"
+        "- Comercialización directa: cómo fijar precios justos, fotografía de producto, "
+        "redacción de ficha, logística rural-urbana.\n"
+        "- Sostenibilidad: prácticas regenerativas, biodiversidad, certificaciones.\n"
+        "- Trámites útiles (ICA, FINAGRO, SENA, cámara de comercio): referencias generales "
+        "sin inventar números ni resoluciones.\n\n"
+        "REGLAS DE SEGURIDAD (INQUEBRANTABLES):\n"
+        "1. NO prescribes medicamentos, dosis exactas ni dejas de recomendar al veterinario "
+        "para cualquier animal enfermo, herido, con fiebre, con síntomas respiratorios o "
+        "neurológicos graves, o para procedimientos quirúrgicos.\n"
+        "2. NO diagnosticas a distancia. Describes posibles causas en lenguaje general y "
+        "siempre sugieres evaluación profesional.\n"
+        "3. NO reemplazas al agrónomo cuando el caso involucra agroquímicos, dosis o "
+        "cálculos técnicos de nutrición/riego para producción comercial.\n"
+        "4. Si detectas señales de emergencia (hemorragia, dificultad respiratoria aguda, "
+        "parálisis, muerte súbita en el rebaño, intoxicación), lo marcas como urgente.\n"
+        "5. NO inventas datos, precios, normas, resoluciones ni nombres de productos. Si "
+        "no sabes algo lo reconoces y sugieres a quién consultar.\n\n"
+        "ESTILO DE RESPUESTA:\n"
+        "- Empieza reconociendo la preocupación del productor con empatía.\n"
+        "- Da 3-6 pasos prácticos y seguros en bullets o numeración corta.\n"
+        "- Usa unidades familiares (bultos, arrobas, hectáreas, cabezas).\n"
+        "- Cierra sugiriendo consultar al profesional verificado adecuado en Rurapp "
+        "(veterinario o agrónomo) cuando aplique, usando una frase cálida.\n"
+        "- Longitud ideal: 5-10 frases. Nunca más de 180 palabras.\n\n"
+        "FORMATO OBLIGATORIO AL FINAL DE CADA RESPUESTA (en una línea separada):\n"
+        "[[PRO:veterinario|agronomo|ninguno]] [[URGENT:yes|no]] [[TOPIC:<1-3 palabras>]]\n"
+        "El usuario no verá estos tags: son metadatos que la aplicación procesa."
     )
     chat = LlmChat(
         api_key=EMERGENT_LLM_KEY,
@@ -1321,9 +1358,9 @@ async def ai_chat(
         system_message=system_message,
     ).with_model("anthropic", "claude-sonnet-4-5-20250929")
 
-    reply = ""
+    raw_reply = ""
     try:
-        reply = await chat.send_message(UserMessage(text=payload.message))
+        raw_reply = await chat.send_message(UserMessage(text=payload.message))
     except Exception as e:
         logging.exception("AI chat error")
         msg = str(e)
@@ -1331,28 +1368,44 @@ async def ai_chat(
             raise HTTPException(
                 status_code=503,
                 detail="El asistente Rura está temporalmente fuera de servicio (límite alcanzado). Intenta más tarde.",
-            )
-        raise HTTPException(status_code=500, detail=f"Error en asistente IA: {msg[:200]}")
+            ) from None
+        raise HTTPException(status_code=500, detail=f"Error en asistente IA: {msg[:200]}") from None
+
+    # Parse structured tags that Claude appends; strip them from the user-visible reply.
+    import re as _re
+    suggested = "ninguno"
+    urgent = False
+    topic = None
+    m = _re.search(r"\[\[PRO:(veterinario|agronomo|ninguno)\]\]", raw_reply, _re.I)
+    if m:
+        suggested = m.group(1).lower()
+    m = _re.search(r"\[\[URGENT:(yes|no|si|sí)\]\]", raw_reply, _re.I)
+    if m:
+        urgent = m.group(1).lower() in {"yes", "si", "sí"}
+    m = _re.search(r"\[\[TOPIC:([^\]]{1,40})\]\]", raw_reply)
+    if m:
+        topic = m.group(1).strip()
+    clean_reply = _re.sub(r"\[\[(PRO|URGENT|TOPIC):[^\]]*\]\]\s*", "", raw_reply).strip()
 
     # Persist conversation
     await db.ai_messages.insert_one({
-        "id": gen_id(),
-        "session_id": session_id,
-        "user_id": user_id,
-        "role": "user",
-        "content": payload.message,
-        "created_at": now_iso(),
+        "id": gen_id(), "session_id": session_id, "user_id": user_id,
+        "role": "user", "content": payload.message, "created_at": now_iso(),
     })
     await db.ai_messages.insert_one({
-        "id": gen_id(),
-        "session_id": session_id,
-        "user_id": user_id,
-        "role": "assistant",
-        "content": reply,
+        "id": gen_id(), "session_id": session_id, "user_id": user_id,
+        "role": "assistant", "content": clean_reply,
+        "metadata": {"suggested_professional": suggested, "urgent": urgent, "topic": topic},
         "created_at": now_iso(),
     })
 
-    return AIChatResponse(session_id=session_id, reply=reply)
+    return AIChatResponse(
+        session_id=session_id,
+        reply=clean_reply,
+        suggested_professional=suggested,
+        urgent=urgent,
+        topic=topic,
+    )
 
 
 @api_router.get("/ai/history/{session_id}")

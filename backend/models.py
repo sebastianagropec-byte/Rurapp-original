@@ -307,6 +307,9 @@ class AIChatRequest(BaseModel):
 class AIChatResponse(BaseModel):
     session_id: str
     reply: str
+    suggested_professional: Optional[Literal["veterinario", "agronomo", "ninguno"]] = "ninguno"
+    urgent: bool = False
+    topic: Optional[str] = None
 
 
 # ===== PAYMENTS =====
